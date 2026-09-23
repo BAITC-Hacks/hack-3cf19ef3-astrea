@@ -175,6 +175,36 @@ def test_r4_invoice_outlier_changes_recommendation_by_at_most_ten_percent() -> N
     assert abs(qty_with - qty_without) / qty_without <= 0.10
 
 
+def test_sparse_outlier_uses_cleaned_monthly_maximum() -> None:
+    data = make_data()
+    july = data["sales_monthly"]["sku_code"].eq("SPARSE-1") & data[
+        "sales_monthly"
+    ]["month"].eq("2026-07")
+    data["sales_monthly"].loc[july, "qty"] += 400.0
+    data["sales_tx"] = pd.concat(
+        [
+            data["sales_tx"],
+            pd.DataFrame(
+                [
+                    {
+                        "date": pd.Timestamp("2026-07-10"),
+                        "sku_code": "SPARSE-1",
+                        "supplier": "IEK",
+                        "qty": 400.0,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    orders, _ = build_recommendations(data)
+    sparse_order = orders.set_index("sku_code").loc["SPARSE-1"]
+
+    assert sparse_order["recommended_qty"] == 8
+    assert sparse_order["max_level"] == 8
+
+
 def test_r5_every_order_has_explanation_and_supplier_grouping_is_lossless() -> None:
     orders, _ = build_recommendations(make_data())
 

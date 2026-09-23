@@ -25,6 +25,19 @@ def prepare_forecasts(
 
     segments = segment_skus(data["sales_monthly"], last_full_month)
     cleaning = clean_sales(data["sales_monthly"], data["sales_tx"], last_full_month)
+    cleaned = cleaning.monthly.copy()
+    cleaned["period"] = pd.PeriodIndex(cleaned["month"], freq="M")
+    first_month = pd.Period(last_full_month, freq="M") - 11
+    sparse_max = (
+        cleaned.loc[cleaned["period"].between(first_month, last_full_month)]
+        .groupby(KEYS)["monthly_clean"]
+        .max()
+    )
+    sparse_mask = segments["segment"].eq("sparse")
+    sparse_keys = pd.MultiIndex.from_frame(segments.loc[sparse_mask, KEYS])
+    segments.loc[sparse_mask, "max_level"] = (
+        sparse_max.reindex(sparse_keys).fillna(0.0).to_numpy()
+    )
     stock = data["stock_monthly"].copy()
     stock["period"] = pd.PeriodIndex(stock["month"], freq="M")
     stock = stock.loc[stock["period"].le(pd.Period(last_full_month, freq="M"))].drop(
