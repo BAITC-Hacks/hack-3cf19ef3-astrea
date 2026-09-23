@@ -6,7 +6,7 @@ import pandas as pd
 from app.config import EngineConfig
 from app.engine.cleaning import clean_sales, detect_outliers
 from app.engine.forecast import build_forecast_profiles, forecast_value
-from app.engine.metrics import wape
+from app.engine.metrics import mdape, wape
 from app.engine.order import round_to_moq
 from app.engine.pipeline import build_recommendations, prepare_forecasts
 from app.engine.segmentation import segment_skus
@@ -255,3 +255,10 @@ def test_growth_is_year_over_year_and_clipped() -> None:
 
 def test_wape() -> None:
     assert wape(np.array([100, 50]), np.array([90, 70])) == 0.2
+
+
+def test_mdape_ignores_zero_actuals() -> None:
+    actual = np.array([100, 50, 0])
+    forecast = np.array([90, 70, 1000])
+
+    assert mdape(actual, forecast) == 0.25

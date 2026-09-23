@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.engine.forecast import forecast_months  # noqa: E402
-from app.engine.metrics import wape  # noqa: E402
+from app.engine.metrics import mdape, wape  # noqa: E402
 from app.engine.pipeline import prepare_forecasts  # noqa: E402
 from app.loaders import load_all  # noqa: E402
 
@@ -58,8 +58,67 @@ def _partner_forecasts(monthly: pd.DataFrame, eligible: pd.DataFrame) -> pd.Data
     return pd.DataFrame(rows)
 
 
+def _average_monthly_sales_12(
+    monthly: pd.DataFrame, eligible: pd.DataFrame
+) -> pd.DataFrame:
+    """Return the partner method's 12-month baseline for outlier reporting."""
+
+    frame = monthly.merge(eligible, on=KEYS, how="inner").copy()
+    frame["period"] = pd.PeriodIndex(frame["month"], freq="M")
+    base_window = frame["period"].between(
+        pd.Period("2025-07", freq="M"), TRAIN_END
+    )
+    totals = (
+        frame.loc[base_window]
+        .groupby(KEYS, as_index=False)["qty"]
+        .sum()
+        .rename(columns={"qty": "base_12_total"})
+    )
+    totals["average_monthly_12"] = totals.pop("base_12_total") / 12.0
+    return totals
+
+
+def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
+    """Summarize accuracy and partner-instability diagnostics at SKU level."""
+
+    by_sku = group.groupby(KEYS, as_index=False).agg(
+        actual=("actual", "sum"),
+        our_forecast=("our_forecast", "sum"),
+        partner_forecast=("partner_forecast", "sum"),
+        partner_monthly_forecast=("partner_forecast", "first"),
+        average_monthly_12=("average_monthly_12", "first"),
+    )
+    partner_error = (by_sku["actual"] - by_sku["partner_forecast"]).abs()
+    partner_outlier = by_sku["partner_monthly_forecast"].gt(
+        10 * by_sku["average_monthly_12"]
+    )
+    total_partner_error = float(partner_error.sum())
+    outlier_error_share = (
+        float(partner_error.loc[partner_outlier].sum() / total_partner_error)
+        if total_partner_error
+        else float("nan")
+    )
+
+    return {
+        "supplier": str(group["supplier"].iloc[0]),
+        "sku_count": int(len(by_sku)),
+        "our_wape": wape(by_sku["actual"].to_numpy(), by_sku["our_forecast"].to_numpy()),
+        "our_mdape": mdape(
+            by_sku["actual"].to_numpy(), by_sku["our_forecast"].to_numpy()
+        ),
+        "partner_wape": wape(
+            by_sku["actual"].to_numpy(), by_sku["partner_forecast"].to_numpy()
+        ),
+        "partner_mdape": mdape(
+            by_sku["actual"].to_numpy(), by_sku["partner_forecast"].to_numpy()
+        ),
+        "partner_outlier_sku_count": int(partner_outlier.sum()),
+        "partner_outlier_error_share": outlier_error_share,
+    }
+
+
 def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Return WAPE for both methods and both suppliers on Jul-Aug 2026."""
+    """Return robust accuracy metrics and diagnostics for Jul-Aug 2026."""
 
     monthly = data["sales_monthly"].copy()
     monthly["period"] = pd.PeriodIndex(monthly["month"], freq="M")
@@ -80,6 +139,7 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         columns={"forecast": "our_forecast"}
     )
     partner = _partner_forecasts(monthly, eligible)
+    average_12 = _average_monthly_sales_12(monthly, eligible)
 
     actual = monthly.loc[monthly["period"].isin(TARGET_MONTHS), [*KEYS, "month", "qty"]]
     actual = actual.groupby([*KEYS, "month"], as_index=False)["qty"].sum().rename(
@@ -88,20 +148,12 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     comparison = actual.merge(ours, on=[*KEYS, "month"], how="inner").merge(
         partner, on=[*KEYS, "month"], how="inner"
     )
+    comparison = comparison.merge(average_12, on=KEYS, how="left")
 
     rows = []
     for supplier in ("IEK", "SE"):
         group = comparison.loc[comparison["supplier"].eq(supplier)]
-        rows.append(
-            {
-                "supplier": supplier,
-                "sku_count": int(group["sku_code"].nunique()),
-                "our_wape": wape(group["actual"].to_numpy(), group["our_forecast"].to_numpy()),
-                "partner_wape": wape(
-                    group["actual"].to_numpy(), group["partner_forecast"].to_numpy()
-                ),
-            }
-        )
+        rows.append(_supplier_metrics(group))
     return pd.DataFrame(rows)
 
 
@@ -110,8 +162,15 @@ def main() -> None:
     for row in results.itertuples(index=False):
         print(
             f"{row.supplier}: our WAPE={row.our_wape:.4f} ({row.our_wape:.2%}), "
+            f"MdAPE={row.our_mdape:.4f} ({row.our_mdape:.2%}); "
             f"partner WAPE={row.partner_wape:.4f} ({row.partner_wape:.2%}), "
+            f"MdAPE={row.partner_mdape:.4f} ({row.partner_mdape:.2%}); "
             f"SKU={row.sku_count}"
+        )
+        print(
+            "  Partner outliers (>10× 12-month average): "
+            f"{row.partner_outlier_sku_count} SKU, "
+            f"{row.partner_outlier_error_share:.2%} of partner absolute error"
         )
 
 
