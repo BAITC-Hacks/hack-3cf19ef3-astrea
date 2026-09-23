@@ -189,6 +189,34 @@ def _needs_calculation(state: object, button_pressed: bool) -> bool:
     return button_pressed or "recommendation_result" not in state
 
 
+def _summary_metrics(frame: pd.DataFrame) -> dict[str, int]:
+    """Return the four order metrics used in each supplier summary."""
+
+    stock_unknown = frame.get(
+        "stock_unknown", pd.Series(False, index=frame.index)
+    ).fillna(False).astype(bool)
+    return {
+        "positions": int(len(frame)),
+        "quantity": int(frame["recommended_qty"].sum()),
+        "high_urgency": int(frame["urgency"].eq("высокая").sum()),
+        "stock_unknown": int(stock_unknown.sum()),
+    }
+
+
+def _show_summary(frame: pd.DataFrame) -> None:
+    if frame.empty:
+        return
+    st.subheader("Сводка")
+    for supplier, supplier_rows in frame.groupby("supplier", sort=False):
+        st.markdown(f"**{supplier}**")
+        metrics = _summary_metrics(supplier_rows)
+        columns = st.columns(4)
+        columns[0].metric("Позиций к заказу", metrics["positions"])
+        columns[1].metric("Штук всего", metrics["quantity"])
+        columns[2].metric("Высокая срочность", metrics["high_urgency"])
+        columns[3].metric("Проверить остаток", metrics["stock_unknown"])
+
+
 def _show_grouped(
     frame: pd.DataFrame,
     columns: dict[str, str],
@@ -339,6 +367,7 @@ def main() -> None:
         review_needed, supplier_choice, category_choice, sku_query
     )
 
+    _show_summary(visible_orders)
     recommendations_tab, review_tab = st.tabs(
         [f"Рекомендации ({len(visible_orders)})", f"На проверку ({len(visible_review)})"]
     )

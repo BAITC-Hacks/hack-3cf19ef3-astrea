@@ -6,6 +6,7 @@ from app.ui.streamlit_app import (
     _filter_rows,
     _needs_calculation,
     _sort_orders,
+    _summary_metrics,
 )
 
 
@@ -38,6 +39,23 @@ def test_first_open_triggers_calculation() -> None:
     assert _needs_calculation(
         {"recommendation_result": object()}, button_pressed=True
     )
+
+
+def test_summary_metrics_describe_supplier_orders() -> None:
+    rows = pd.DataFrame(
+        {
+            "recommended_qty": [12, 8, 5],
+            "urgency": ["высокая", "низкая", "проверить остаток"],
+            "stock_unknown": [False, False, True],
+        }
+    )
+
+    assert _summary_metrics(rows) == {
+        "positions": 3,
+        "quantity": 25,
+        "high_urgency": 1,
+        "stock_unknown": 1,
+    }
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:
