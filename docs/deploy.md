@@ -18,14 +18,14 @@ docker compose up --build        # → http://localhost:8501
 - домен, на котором можно завести поддомен;
 - от 1 ГБ RAM (пик расчёта ~236 МБ).
 
-Ниже вместо `autozakaz.example.com`, `user` и `1.2.3.4` подставь свои значения.
+Ниже вместо `astrea.one`, `user` и `1.2.3.4` подставь свои значения.
 
 ## 1. DNS
 
-У регистратора домена создай A-запись: `autozakaz` → IP VPS. Проверь с Mac:
+У регистратора домена создай A-запись: `@` (сам домен `astrea.one`) → IP VPS. Проверь с Mac:
 
 ```bash
-dig +short autozakaz.example.com     # должен вернуть IP VPS
+dig +short astrea.one     # должен вернуть IP VPS
 ```
 
 Запись может расходиться до 15–30 минут. Caddy не получит сертификат, пока она не заработает.
@@ -50,7 +50,7 @@ sudo ufw allow 80,443/tcp
 VPS_HOST=1.2.3.4 VPS_USER=user ./deploy/deploy.sh
 ```
 
-Скрипт скопирует код в `/opt/avtozakaz/` и остановится с подсказкой: на сервере ещё нет `.env`. Так и должно быть.
+Скрипт скопирует код в `/opt/astrea/` и остановится с подсказкой: на сервере ещё нет `.env`. Так и должно быть.
 
 ## 4. Пароль и `.env` на сервере
 
@@ -63,7 +63,7 @@ docker run --rm caddy:2 caddy hash-password --plaintext 'придумай-пар
 Создай файл с настройками:
 
 ```bash
-cd /opt/avtozakaz
+cd /opt/astrea
 cp .env.example .env
 nano .env
 ```
@@ -73,7 +73,7 @@ nano .env
 ```
 POSTGRES_PASSWORD=...
 COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
-DOMAIN=autozakaz.example.com
+DOMAIN=astrea.one
 BASIC_AUTH_USER=jury
 BASIC_AUTH_HASH='$2a$14$...хэш целиком...'
 ```
@@ -91,7 +91,7 @@ openssl rand -hex 24      # скопируй результат в строку 
 База хранит утверждённые заказы в Docker-томе `pg_data`, поэтому обновления её не стирают. Резервная копия при необходимости:
 
 ```bash
-docker compose exec db pg_dump -U autozakaz autozakaz > backup.sql
+docker compose exec db pg_dump -U astrea astrea > backup.sql
 ```
 
 ## 5. Запуск
@@ -105,7 +105,7 @@ VPS_HOST=1.2.3.4 VPS_USER=user ./deploy/deploy.sh
 Первая сборка образа занимает несколько минут. На сервере можно смотреть логи:
 
 ```bash
-cd /opt/avtozakaz
+cd /opt/astrea
 docker compose ps
 docker compose logs -f caddy     # ждём строку об успешном получении сертификата
 ```
@@ -121,8 +121,8 @@ docker compose run --rm app pytest -q
 С Mac:
 
 ```bash
-curl -sI https://autozakaz.example.com | head -1                   # HTTP/2 401 — без пароля не пускает
-curl -sI -u jury:пароль https://autozakaz.example.com | head -1     # HTTP/2 200
+curl -sI https://astrea.one | head -1                   # HTTP/2 401 — без пароля не пускает
+curl -sI -u jury:пароль https://astrea.one | head -1     # HTTP/2 200
 nc -zv -w 3 1.2.3.4 8501; nc -zv -w 3 1.2.3.4 5432                 # оба должны отказать: наружу открыт только Caddy
 ```
 
