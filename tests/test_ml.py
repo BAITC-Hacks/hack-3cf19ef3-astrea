@@ -4,6 +4,7 @@ import pandas as pd
 from app.config import EngineConfig
 from app.engine.ml import (
     FEATURE_COLUMNS,
+    _build_training_frame_iterative,
     build_prediction_frame,
     build_training_frame,
     predict,
@@ -124,6 +125,24 @@ def test_training_frame_has_past_targets_and_complete_features() -> None:
     assert not frame.empty
     assert (pd.PeriodIndex(frame["month"], freq="M") <= train_end).all()
     assert not frame[FEATURE_COLUMNS + ["target"]].isna().any().any()
+
+
+def test_vectorized_training_frame_matches_iterative_reference() -> None:
+    demand, segments, sku_ref = _ml_inputs()
+    train_end = pd.Period("2026-06", freq="M")
+
+    expected = _build_training_frame_iterative(
+        demand, segments, sku_ref, train_end
+    )
+    actual = build_training_frame(demand, segments, sku_ref, train_end)
+
+    pd.testing.assert_frame_equal(
+        actual,
+        expected,
+        check_exact=False,
+        rtol=1e-12,
+        atol=1e-12,
+    )
 
 
 def test_model_produces_finite_non_negative_forecasts() -> None:

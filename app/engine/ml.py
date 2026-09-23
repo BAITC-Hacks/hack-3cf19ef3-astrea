@@ -153,7 +153,7 @@ def _feature_rows(
     return rows
 
 
-def build_training_frame(
+def _build_training_frame_iterative(
     demand: pd.DataFrame,
     segments: pd.DataFrame,
     sku_ref: pd.DataFrame,
@@ -193,6 +193,205 @@ def build_training_frame(
         "target",
     ]
     return pd.DataFrame(rows, columns=columns)
+
+
+def _matrix_column(matrix: pd.DataFrame, period: pd.Period) -> np.ndarray:
+    if period in matrix.columns:
+        return matrix[period].to_numpy(dtype=float)
+    return np.zeros(len(matrix), dtype=float)
+
+
+def _seasonal_feature_matrices(
+    demand_matrix: pd.DataFrame,
+    supplier_codes: np.ndarray,
+    supplier_count: int,
+    origin: pd.Period,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized equivalent of the two approved seasonal-index functions."""
+
+    sku_years = np.zeros((len(demand_matrix), 2, 12), dtype=float)
+    for year_index, year in enumerate((2024, 2025)):
+        for month in range(1, 13):
+            period = pd.Period(year=year, month=month, freq="M")
+            if period <= origin:
+                sku_years[:, year_index, month - 1] = _matrix_column(
+                    demand_matrix, period
+                )
+
+    supplier_years = np.zeros((supplier_count, 2, 12), dtype=float)
+    for supplier_index in range(supplier_count):
+        supplier_years[supplier_index] = sku_years[
+            supplier_codes == supplier_index
+        ].sum(axis=0)
+
+    supplier_means = supplier_years.mean(axis=2)
+    supplier_valid = supplier_means > 0
+    supplier_normalized = np.divide(
+        supplier_years,
+        supplier_means[:, :, None],
+        out=np.zeros_like(supplier_years),
+        where=supplier_valid[:, :, None],
+    )
+    supplier_counts = supplier_valid.sum(axis=1)
+    supplier_seasons = np.divide(
+        supplier_normalized.sum(axis=1),
+        supplier_counts[:, None],
+        out=np.ones((supplier_count, 12), dtype=float),
+        where=supplier_counts[:, None] > 0,
+    )
+
+    sku_means = sku_years.mean(axis=2)
+    sku_valid = sku_years.sum(axis=2) > 0
+    sku_normalized = np.divide(
+        sku_years,
+        sku_means[:, :, None],
+        out=np.zeros_like(sku_years),
+        where=sku_valid[:, :, None],
+    )
+    supplier_for_sku = supplier_seasons[supplier_codes]
+    sku_seasons = np.where(
+        sku_valid.all(axis=1)[:, None],
+        sku_normalized.mean(axis=1),
+        supplier_for_sku,
+    )
+    combined = np.clip(
+        0.5 * sku_seasons + 0.5 * supplier_for_sku,
+        0.3,
+        3.0,
+    )
+    return combined, supplier_for_sku
+
+
+def build_training_frame(
+    demand: pd.DataFrame,
+    segments: pd.DataFrame,
+    sku_ref: pd.DataFrame,
+    train_end: pd.Period,
+    horizons: Iterable[int] = range(1, 7),
+) -> pd.DataFrame:
+    """Build the approved training examples with vectorized SKU operations."""
+
+    train_end = pd.Period(train_end, freq="M")
+    history = _regular_history(demand, segments)
+    key_frame = history[KEYS].drop_duplicates().reset_index(drop=True)
+    key_index = pd.MultiIndex.from_frame(key_frame)
+    demand_matrix = (
+        history.pivot(index=KEYS, columns="period", values="demand")
+        .reindex(key_index)
+        .fillna(0.0)
+    )
+    stockout_matrix = (
+        history.pivot(index=KEYS, columns="period", values="is_stockout")
+        .reindex(key_index)
+        .fillna(False)
+        .astype(bool)
+    )
+
+    supplier_names = sorted(history["supplier"].unique())
+    supplier_map = {name: index for index, name in enumerate(supplier_names)}
+    supplier_codes = key_frame["supplier"].map(supplier_map).to_numpy(dtype=int)
+    category_map = _category_mapping(sku_ref)
+    references = sku_ref.drop_duplicates(KEYS).set_index(KEYS)
+    categories = references.reindex(key_index)["category"].astype(str)
+    category_codes = categories.map(category_map).to_numpy(dtype=int)
+    horizon_values = tuple(int(value) for value in horizons)
+    row_frames = []
+
+    for origin in pd.period_range("2024-12", train_end - 1, freq="M"):
+        valid_horizons = np.array(
+            [value for value in horizon_values if origin + value <= train_end],
+            dtype=int,
+        )
+        if not len(valid_horizons):
+            continue
+
+        history_months = [origin - offset for offset in range(11, -1, -1)]
+        trailing = np.column_stack(
+            [_matrix_column(demand_matrix, month) for month in history_months]
+        )
+        base = trailing.mean(axis=1) + 1.0
+        recent = trailing[:, -3:].sum(axis=1)
+        prior = np.column_stack(
+            [_matrix_column(demand_matrix, month - 12) for month in history_months[-3:]]
+        ).sum(axis=1)
+        growth = np.divide(
+            recent,
+            prior,
+            out=np.ones_like(recent),
+            where=prior != 0,
+        )
+        growth = np.clip(growth, 0.5, 2.0)
+        stockouts = np.column_stack(
+            [
+                _matrix_column(stockout_matrix, month)
+                for month in history_months
+            ]
+        ).sum(axis=1).astype(int)
+        sku_seasons, supplier_seasons = _seasonal_feature_matrices(
+            demand_matrix,
+            supplier_codes,
+            len(supplier_names),
+            origin,
+        )
+
+        target_periods = [origin + int(value) for value in valid_horizons]
+        target_months = np.array([period.month for period in target_periods])
+        same_last_year = np.column_stack(
+            [
+                _matrix_column(demand_matrix, period - 12)
+                for period in target_periods
+            ]
+        )
+        targets = np.column_stack(
+            [_matrix_column(demand_matrix, period) for period in target_periods]
+        )
+        horizon_count = len(valid_horizons)
+
+        frame = pd.DataFrame(
+            {
+                "sku_code": np.repeat(key_frame["sku_code"].to_numpy(), horizon_count),
+                "supplier": np.repeat(key_frame["supplier"].to_numpy(), horizon_count),
+                "origin": str(origin),
+                "month": np.tile([str(period) for period in target_periods], len(key_frame)),
+                "base": np.repeat(base, horizon_count),
+                "demand_lag_0": np.repeat(trailing[:, -1] / base, horizon_count),
+                "demand_lag_1": np.repeat(trailing[:, -2] / base, horizon_count),
+                "demand_lag_2": np.repeat(trailing[:, -3] / base, horizon_count),
+                "demand_lag_5": np.repeat(trailing[:, -6] / base, horizon_count),
+                "demand_lag_11": np.repeat(trailing[:, 0] / base, horizon_count),
+                "rolling_mean_3": np.repeat(
+                    trailing[:, -3:].mean(axis=1) / base, horizon_count
+                ),
+                "rolling_mean_6": np.repeat(
+                    trailing[:, -6:].mean(axis=1) / base, horizon_count
+                ),
+                "same_month_last_year": (same_last_year / base[:, None]).ravel(),
+                "sku_season": sku_seasons[:, target_months - 1].ravel(),
+                "supplier_season": supplier_seasons[:, target_months - 1].ravel(),
+                "growth_yoy": np.repeat(growth, horizon_count),
+                "zero_share_12": np.repeat(
+                    np.mean(trailing == 0, axis=1), horizon_count
+                ),
+                "stockout_months_12": np.repeat(stockouts, horizon_count),
+                "target_month": np.tile(target_months, len(key_frame)),
+                "horizon": np.tile(valid_horizons, len(key_frame)),
+                "supplier_feature": np.repeat(supplier_codes, horizon_count),
+                "category_feature": np.repeat(category_codes, horizon_count),
+                "target": (targets / base[:, None]).ravel(),
+            }
+        )
+        row_frames.append(frame)
+
+    columns = [
+        "sku_code",
+        "supplier",
+        "origin",
+        "month",
+        "base",
+        *FEATURE_COLUMNS,
+        "target",
+    ]
+    return pd.concat(row_frames, ignore_index=True)[columns]
 
 
 def build_prediction_frame(
