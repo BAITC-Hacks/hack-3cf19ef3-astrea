@@ -96,6 +96,7 @@ def make_data() -> dict[str, pd.DataFrame]:
     sku_ref["name"] = sku_ref["sku_code"].str.replace("-", " ", regex=False)
     sku_ref["article"] = "A-" + pd.Series(range(1, len(sku_ref) + 1)).astype(str)
     sku_ref["unit"] = "шт"
+    sku_ref["category"] = "без категории"
     current_stock = keys.copy()
     current_stock["free_stock"] = 0.0
     current_stock["stock_unknown"] = False
@@ -115,7 +116,9 @@ def make_data() -> dict[str, pd.DataFrame]:
         ],
         "in_transit": in_transit[["sku_code", "supplier", "qty"]],
         "moq": moq[["sku_code", "supplier", "moq"]],
-        "sku_ref": sku_ref[["sku_code", "supplier", "name", "article", "unit"]],
+        "sku_ref": sku_ref[
+            ["sku_code", "supplier", "name", "article", "unit", "category"]
+        ],
     }
 
 

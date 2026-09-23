@@ -105,6 +105,7 @@ def _write_supplier_files(root: Path, supplier: str) -> None:
                 "Артикул поставщика": ["A-1", "A-2", "A-3"],
                 "Код 1с": ["SEASONAL-1", "STOCKOUT-1", "OUTLIER-1"],
                 "Наименование": ["Seasonal fixture", "Stockout fixture", "Outlier fixture"],
+                "Категория 2026": [1, 2, None],
                 "Кэф. Роста": [1.2, 1.0, 1.0],
                 "Свободный остаток": [11, 12, None],
                 "СЭ в пути 24.09": [7, 5, 2],
@@ -202,3 +203,8 @@ def test_load_all_combines_suppliers_and_fills_missing_moq(synthetic_data_dir: P
     assert ("OUTLIER-1", "SE") in tables["current_stock"].attrs["estimated_keys"]
     assert set(tables["sku_ref"]["unit"]) == {"шт"}
     assert tables["sku_ref"]["article"].str.startswith("A-").all()
+    categories = tables["sku_ref"].set_index(["sku_code", "supplier"])["category"]
+    assert categories.loc[("SEASONAL-1", "SE")] == "1"
+    assert categories.loc[("STOCKOUT-1", "SE")] == "2"
+    assert categories.loc[("OUTLIER-1", "SE")] == "без категории"
+    assert categories.loc[("SEASONAL-1", "IEK")] == "без категории"

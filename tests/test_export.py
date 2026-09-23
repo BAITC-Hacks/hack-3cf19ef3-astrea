@@ -14,6 +14,7 @@ def test_export_has_supplier_sheets_and_explanation_sheet() -> None:
                 "article": "ART-1",
                 "name": "Тестовый товар",
                 "unit": "шт",
+                "category": "1",
                 "supplier": "IEK",
                 "recommended_qty": 12,
                 "urgency": "высокая",
@@ -30,6 +31,7 @@ def test_export_has_supplier_sheets_and_explanation_sheet() -> None:
         "Артикул поставщика",
         "Наименование",
         "Ед.",
+        "Категория",
         "Количество",
     ]
     assert [cell.value for cell in workbook["SE"][1]] == [
@@ -37,6 +39,7 @@ def test_export_has_supplier_sheets_and_explanation_sheet() -> None:
         "Артикул поставщика",
         "Наименование",
         "Ед.",
+        "Категория",
         "Количество",
     ]
     assert [cell.value for cell in workbook["Обоснование"][1]][-3:] == [

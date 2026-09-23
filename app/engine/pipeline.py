@@ -77,6 +77,7 @@ def build_recommendations(
         "article",
         "name",
         "unit",
+        "category",
         "supplier",
         "segment",
         "recommended_qty",
@@ -94,6 +95,15 @@ def build_recommendations(
     )
     review_needed["reason"] = "Нет продаж за последние 12 полных месяцев"
     review_needed = review_needed[
-        ["sku_code", "article", "name", "unit", "supplier", "segment", "reason"]
+        [
+            "sku_code",
+            "article",
+            "name",
+            "unit",
+            "category",
+            "supplier",
+            "segment",
+            "reason",
+        ]
     ].reset_index(drop=True)
     return orders, review_needed

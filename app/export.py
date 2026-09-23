@@ -12,6 +12,7 @@ ORDER_COLUMNS = {
     "article": "Артикул поставщика",
     "name": "Наименование",
     "unit": "Ед.",
+    "category": "Категория",
     "recommended_qty": "Количество",
 }
 EXPLANATION_COLUMNS = {
@@ -19,6 +20,7 @@ EXPLANATION_COLUMNS = {
     "article": "Артикул поставщика",
     "name": "Наименование",
     "unit": "Ед.",
+    "category": "Категория",
     "supplier": "Поставщик",
     "recommended_qty": "Количество",
     "urgency": "Срочность",

@@ -12,7 +12,7 @@ TABLE_COLUMNS = {
     "current_stock": ("sku_code", "supplier", "free_stock", "stock_unknown"),
     "in_transit": ("sku_code", "supplier", "qty"),
     "moq": ("sku_code", "supplier", "moq"),
-    "sku_ref": ("sku_code", "supplier", "name", "article", "unit"),
+    "sku_ref": ("sku_code", "supplier", "name", "article", "unit", "category"),
 }
 
 

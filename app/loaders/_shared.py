@@ -191,20 +191,25 @@ def load_reference(path: PathLike, supplier: str) -> pd.DataFrame:
         frame, ("Артикул поставщика", "Артикул ИЭК", "Артикул")
     )
     unit_column = find_optional_column(frame, ("Ед.", "Ед.изм", "Ед"))
+    category_column = find_optional_column(frame, ("Категория 2026",))
 
     result = frame[[code_column, name_column]].copy()
     result.columns = ["sku_code", "name"]
     result["article"] = frame[article_column] if article_column is not None else ""
     result["unit"] = frame[unit_column] if unit_column is not None else ""
+    result["category"] = frame[category_column] if category_column is not None else ""
     result["sku_code"] = clean_string(result["sku_code"])
     result["name"] = clean_string(result["name"])
     result["article"] = clean_string(result["article"]).fillna("")
     result["unit"] = clean_string(result["unit"]).fillna("")
+    result["category"] = (
+        clean_string(result["category"]).fillna("").str.replace(r"\.0$", "", regex=True)
+    )
     result = result.dropna(subset=["sku_code", "name"])
     result["supplier"] = pd.Series(supplier, index=result.index, dtype="string")
-    return result[["sku_code", "supplier", "name", "article", "unit"]].drop_duplicates(
-        ["sku_code", "supplier"], keep="first"
-    ).reset_index(drop=True)
+    return result[
+        ["sku_code", "supplier", "name", "article", "unit", "category"]
+    ].drop_duplicates(["sku_code", "supplier"], keep="first").reset_index(drop=True)
 
 
 def load_moq_table(path: PathLike, supplier: str, moq_candidates: Sequence[str]) -> pd.DataFrame:

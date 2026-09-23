@@ -62,8 +62,16 @@ def _combine_references(paths: Dict[str, Dict[str, Path]]) -> pd.DataFrame:
 
     return (
         combined.groupby(["sku_code", "supplier"], as_index=False, sort=False)
-        .agg({"name": first_nonempty, "article": first_nonempty, "unit": first_nonempty})
-        [["sku_code", "supplier", "name", "article", "unit"]]
+        .agg(
+            {
+                "name": first_nonempty,
+                "article": first_nonempty,
+                "unit": first_nonempty,
+                "category": first_nonempty,
+            }
+        )
+        .assign(category=lambda frame: frame["category"].replace("", "без категории"))
+        [["sku_code", "supplier", "name", "article", "unit", "category"]]
     )
 
 
