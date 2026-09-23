@@ -1,6 +1,27 @@
 import pandas as pd
 
-from app.ui.streamlit_app import _filter_rows, _sort_orders
+from app.ui.streamlit_app import ORDER_COLUMNS, REVIEW_COLUMNS, _filter_rows, _sort_orders
+
+
+def test_grouped_table_columns_prioritize_decision_fields() -> None:
+    assert list(ORDER_COLUMNS.values()) == [
+        "Код 1С",
+        "Наименование",
+        "Количество",
+        "Срочность",
+        "Обоснование",
+        "Артикул",
+        "Категория",
+    ]
+    assert list(REVIEW_COLUMNS.values()) == [
+        "Код 1С",
+        "Наименование",
+        "Причина",
+        "Артикул",
+        "Категория",
+    ]
+    assert "supplier" not in ORDER_COLUMNS
+    assert "supplier" not in REVIEW_COLUMNS
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:

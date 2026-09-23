@@ -32,21 +32,35 @@ DATA_DIR = ROOT / "data" / "raw"
 SUPPLIER_OPTIONS = ("Оба", "IEK", "SE")
 ORDER_COLUMNS = {
     "sku_code": "Код 1С",
-    "article": "Артикул",
     "name": "Наименование",
-    "category": "Категория",
-    "supplier": "Поставщик",
-    "recommended_qty": "Рекомендуемое количество",
+    "recommended_qty": "Количество",
     "urgency": "Срочность",
     "explanation": "Обоснование",
+    "article": "Артикул",
+    "category": "Категория",
 }
 REVIEW_COLUMNS = {
     "sku_code": "Код 1С",
-    "article": "Артикул",
     "name": "Наименование",
-    "category": "Категория",
-    "supplier": "Поставщик",
     "reason": "Причина",
+    "article": "Артикул",
+    "category": "Категория",
+}
+ORDER_COLUMN_CONFIG = {
+    "Код 1С": st.column_config.TextColumn(width="small"),
+    "Наименование": st.column_config.TextColumn(width="medium"),
+    "Количество": st.column_config.NumberColumn(width="small", format="%d"),
+    "Срочность": st.column_config.TextColumn(width="small"),
+    "Обоснование": st.column_config.TextColumn(width="large"),
+    "Артикул": st.column_config.TextColumn(width="medium"),
+    "Категория": st.column_config.TextColumn(width="medium"),
+}
+REVIEW_COLUMN_CONFIG = {
+    "Код 1С": st.column_config.TextColumn(width="small"),
+    "Наименование": st.column_config.TextColumn(width="medium"),
+    "Причина": st.column_config.TextColumn(width="large"),
+    "Артикул": st.column_config.TextColumn(width="medium"),
+    "Категория": st.column_config.TextColumn(width="medium"),
 }
 URGENCY_ORDER = {"высокая": 0, "средняя": 1, "низкая": 2}
 FORECAST_OPTIONS = {
@@ -169,7 +183,11 @@ def _sort_orders(frame: pd.DataFrame) -> pd.DataFrame:
     ).drop(columns=["_stock_unknown_rank", "_urgency_rank"])
 
 
-def _show_grouped(frame: pd.DataFrame, columns: dict[str, str]) -> None:
+def _show_grouped(
+    frame: pd.DataFrame,
+    columns: dict[str, str],
+    column_config: dict[str, object],
+) -> None:
     if frame.empty:
         st.info("По выбранным фильтрам строк нет.")
         return
@@ -198,6 +216,7 @@ def _show_grouped(frame: pd.DataFrame, columns: dict[str, str]) -> None:
             )
         st.dataframe(
             display,
+            column_config=column_config,
             width="stretch",
             hide_index=True,
         )
@@ -329,7 +348,7 @@ def main() -> None:
         [f"Рекомендации ({len(visible_orders)})", f"На проверку ({len(visible_review)})"]
     )
     with recommendations_tab:
-        _show_grouped(visible_orders, ORDER_COLUMNS)
+        _show_grouped(visible_orders, ORDER_COLUMNS, ORDER_COLUMN_CONFIG)
         workbook = export_xlsx(visible_orders)
         stock_review_count = int(
             visible_orders["stock_unknown"].fillna(False).astype(bool).sum()
@@ -355,7 +374,7 @@ def main() -> None:
                     hide_index=True,
                 )
     with review_tab:
-        _show_grouped(visible_review, REVIEW_COLUMNS)
+        _show_grouped(visible_review, REVIEW_COLUMNS, REVIEW_COLUMN_CONFIG)
 
 
 if __name__ == "__main__":
