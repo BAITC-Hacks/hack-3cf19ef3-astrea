@@ -31,10 +31,11 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
     with st.container(key="auth_panel", border=True):
         st.title("Astrea AI")
         st.subheader("Автозаказ поставщикам")
-        mode = st.segmented_control(
+        mode = st.radio(
             "Режим",
             ["Вход", "Регистрация"],
-            default="Вход",
+            index=0,
+            horizontal=True,
             label_visibility="collapsed",
         )
         if mode == "Регистрация":
