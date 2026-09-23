@@ -151,8 +151,10 @@ h2, h3 {
 
 [data-testid="stSidebarContent"] {
   position: relative;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   padding-bottom: 9rem;
+  box-sizing: border-box;
 }
 
 .st-key-sidebar_brand {
@@ -186,8 +188,20 @@ h2, h3 {
   right: 1rem;
   bottom: 1rem;
   left: 1rem;
+  width: calc(100% - 2rem);
+  max-width: calc(100% - 2rem);
+  overflow: hidden;
+  box-sizing: border-box;
   padding-top: 0.9rem;
   border-top: 1px solid var(--astrea-border);
+}
+
+.st-key-sidebar_profile .stButton,
+.st-key-sidebar_profile .stButton > button {
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .astrea-profile {
