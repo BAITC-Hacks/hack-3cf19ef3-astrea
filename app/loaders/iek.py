@@ -35,7 +35,7 @@ def load_stock_monthly(path: PathLike) -> pd.DataFrame:
         SUPPLIER,
         ("Номенклатура.Код", "Код 1с"),
         "opening_stock",
-        fill_missing=False,
+        fill_missing=True,
     )
 
 

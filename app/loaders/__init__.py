@@ -53,11 +53,64 @@ def _combine_references(paths: Dict[str, Dict[str, Path]]) -> pd.DataFrame:
         for table_name in ("sales_monthly", "stock_monthly", "in_transit", "moq"):
             references.append(loader.load_sku_ref(paths[supplier][table_name]))
 
-    combined = pd.concat(references, ignore_index=True)
-    combined = combined.dropna(subset=["sku_code", "name"])
-    return combined.drop_duplicates(["sku_code", "supplier"], keep="first").reset_index(
-        drop=True
+    combined = pd.concat(references, ignore_index=True).dropna(subset=["sku_code", "name"])
+
+    def first_nonempty(values: pd.Series) -> str:
+        present = values.astype("string").fillna("")
+        present = present.loc[present.str.strip().ne("")]
+        return "" if present.empty else str(present.iloc[0])
+
+    return (
+        combined.groupby(["sku_code", "supplier"], as_index=False, sort=False)
+        .agg({"name": first_nonempty, "article": first_nonempty, "unit": first_nonempty})
+        [["sku_code", "supplier", "name", "article", "unit"]]
     )
+
+
+def _build_current_stock(
+    sku_ref: pd.DataFrame,
+    stock_monthly: pd.DataFrame,
+    sales_tx: pd.DataFrame,
+    se_snapshot: pd.DataFrame,
+) -> pd.DataFrame:
+    """Combine the SE snapshot with a conservative month-to-date fallback."""
+
+    as_of = sales_tx["date"].max()
+    if pd.isna(as_of):
+        raise ValueError("Cannot calculate current stock without sales transaction dates")
+    current_month = pd.Timestamp(as_of).strftime("%Y-%m")
+    month_start = pd.Timestamp(as_of).to_period("M").start_time
+
+    opening = (
+        stock_monthly.loc[stock_monthly["month"].eq(current_month)]
+        .groupby(["sku_code", "supplier"], as_index=False)["opening_stock"]
+        .sum()
+    )
+    sales = (
+        sales_tx.loc[sales_tx["date"].between(month_start, as_of)]
+        .groupby(["sku_code", "supplier"], as_index=False)["qty"]
+        .sum()
+        .rename(columns={"qty": "month_sales"})
+    )
+
+    result = sku_ref[["sku_code", "supplier"]].merge(
+        opening, on=["sku_code", "supplier"], how="left"
+    )
+    result = result.merge(sales, on=["sku_code", "supplier"], how="left")
+    result["free_stock"] = (
+        result["opening_stock"].fillna(0.0) - result["month_sales"].fillna(0.0)
+    ).clip(lower=0.0)
+
+    snapshot = se_snapshot.rename(columns={"free_stock": "snapshot_stock"})
+    result = result.merge(snapshot, on=["sku_code", "supplier"], how="left")
+    use_snapshot = result["supplier"].eq("SE") & result["snapshot_stock"].notna()
+    result.loc[use_snapshot, "free_stock"] = result.loc[use_snapshot, "snapshot_stock"]
+    result["free_stock"] = result["free_stock"].astype(float)
+    final = result[["sku_code", "supplier", "free_stock"]].copy()
+    final.attrs["estimated_keys"] = list(
+        result.loc[~use_snapshot, ["sku_code", "supplier"]].itertuples(index=False, name=None)
+    )
+    return final
 
 
 def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
@@ -90,6 +143,12 @@ def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
         raw_moq, on=["sku_code", "supplier"], how="left"
     )
     tables["moq"]["moq"] = tables["moq"]["moq"].fillna(1).astype("Int64")
+    tables["current_stock"] = _build_current_stock(
+        tables["sku_ref"],
+        tables["stock_monthly"],
+        tables["sales_tx"],
+        se.load_current_stock(paths["SE"]["in_transit"]),
+    )
 
     validate_model(tables)
     return tables

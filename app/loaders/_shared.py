@@ -70,6 +70,15 @@ def find_column_containing(frame: pd.DataFrame, fragment: str) -> object:
     raise ValueError(f"No column containing {fragment!r} exists in the input")
 
 
+def find_optional_column(frame: pd.DataFrame, candidates: Sequence[str]) -> Optional[object]:
+    """Return a matching column or None when the workbook does not contain it."""
+
+    try:
+        return find_column(frame, candidates)
+    except ValueError:
+        return None
+
+
 def clean_string(series: pd.Series) -> pd.Series:
     """Strip identifiers/names while preserving missing values."""
 
@@ -165,7 +174,7 @@ def load_sales_transactions(path: PathLike, supplier: str) -> pd.DataFrame:
 
 
 def load_reference(path: PathLike, supplier: str) -> pd.DataFrame:
-    """Extract a SKU/name reference from any supported supplier workbook."""
+    """Extract names, supplier articles and units from a supported workbook."""
 
     frame = None
     for code_label in ("Код 1с", "Номенклатура.Код", "Код"):
@@ -178,14 +187,22 @@ def load_reference(path: PathLike, supplier: str) -> pd.DataFrame:
         raise ValueError(f"Could not find a SKU code column in {path}")
     code_column = find_column(frame, ("Код 1с", "Номенклатура.Код", "Код"))
     name_column = find_column(frame, ("Наименование", "Номенклатура", " Наименование"))
+    article_column = find_optional_column(
+        frame, ("Артикул поставщика", "Артикул ИЭК", "Артикул")
+    )
+    unit_column = find_optional_column(frame, ("Ед.", "Ед.изм", "Ед"))
 
     result = frame[[code_column, name_column]].copy()
     result.columns = ["sku_code", "name"]
+    result["article"] = frame[article_column] if article_column is not None else ""
+    result["unit"] = frame[unit_column] if unit_column is not None else ""
     result["sku_code"] = clean_string(result["sku_code"])
     result["name"] = clean_string(result["name"])
+    result["article"] = clean_string(result["article"]).fillna("")
+    result["unit"] = clean_string(result["unit"]).fillna("")
     result = result.dropna(subset=["sku_code", "name"])
     result["supplier"] = pd.Series(supplier, index=result.index, dtype="string")
-    return result[["sku_code", "supplier", "name"]].drop_duplicates(
+    return result[["sku_code", "supplier", "name", "article", "unit"]].drop_duplicates(
         ["sku_code", "supplier"], keep="first"
     ).reset_index(drop=True)
 

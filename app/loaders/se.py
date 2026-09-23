@@ -36,7 +36,7 @@ def load_stock_monthly(path: PathLike) -> pd.DataFrame:
         SUPPLIER,
         ("Номенклатура.Код", "Код 1с"),
         "opening_stock",
-        fill_missing=False,
+        fill_missing=True,
     )
 
 
@@ -57,6 +57,24 @@ def load_in_transit(path: PathLike) -> pd.DataFrame:
 
 def load_moq(path: PathLike) -> pd.DataFrame:
     return load_moq_table(path, SUPPLIER, ("Кратность",))
+
+
+def load_current_stock(path: PathLike) -> pd.DataFrame:
+    """Read the real free-stock snapshot embedded in the SE transit workbook."""
+
+    frame = read_excel_table(path, ("Код 1с", "Артикул поставщика", "Наименование"))
+    code_column = find_column(frame, ("Код 1с",))
+    stock_column = find_column(frame, ("Свободный остаток",))
+    result = pd.DataFrame(
+        {
+            "sku_code": clean_string(frame[code_column]),
+            "supplier": pd.Series(SUPPLIER, index=frame.index, dtype="string"),
+            "free_stock": pd.to_numeric(frame[stock_column], errors="coerce"),
+        }
+    ).dropna(subset=["sku_code", "free_stock"])
+    return result.groupby(["sku_code", "supplier"], as_index=False, sort=False)[
+        "free_stock"
+    ].sum()
 
 
 def load_sku_ref(path: PathLike) -> pd.DataFrame:

@@ -9,9 +9,10 @@ TABLE_COLUMNS = {
     "sales_tx": ("date", "sku_code", "supplier", "qty"),
     "sales_monthly": ("sku_code", "supplier", "month", "qty"),
     "stock_monthly": ("sku_code", "supplier", "month", "opening_stock"),
+    "current_stock": ("sku_code", "supplier", "free_stock"),
     "in_transit": ("sku_code", "supplier", "qty"),
     "moq": ("sku_code", "supplier", "moq"),
-    "sku_ref": ("sku_code", "supplier", "name"),
+    "sku_ref": ("sku_code", "supplier", "name", "article", "unit"),
 }
 
 

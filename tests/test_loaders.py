@@ -50,7 +50,11 @@ def _monthly_source(source_name: str, supplier: str, stock: bool) -> pd.DataFram
                 **({"№": range(1, len(source) + 1)} if stock else {}),
                 "Номенклатура": source["name"],
                 "Номенклатура.Код": source["sku_code"],
-                **({"Ед.изм": "шт"} if stock else {"Артикул": source["sku_code"], "Кратность": 1}),
+                **(
+                    {"Ед.изм": "шт"}
+                    if stock
+                    else {"Артикул": [f"A-{index}" for index in range(1, len(source) + 1)], "Кратность": 1}
+                ),
             }
         )
 
@@ -102,6 +106,7 @@ def _write_supplier_files(root: Path, supplier: str) -> None:
                 "Код 1с": ["SEASONAL-1", "STOCKOUT-1", "OUTLIER-1"],
                 "Наименование": ["Seasonal fixture", "Stockout fixture", "Outlier fixture"],
                 "Кэф. Роста": [1.2, 1.0, 1.0],
+                "Свободный остаток": [11, 12, None],
                 "СЭ в пути 24.09": [7, 5, 2],
             }
         )
@@ -154,6 +159,7 @@ def test_monthly_loaders_return_canonical_columns_and_values(
     assert set(sales["month"]) == {f"2025-{month:02d}" for month in range(1, 13)}
     assert is_float_dtype(sales["qty"])
     assert is_float_dtype(stock["opening_stock"])
+    assert not stock["opening_stock"].isna().any()
     stockout = stock.loc[stock["sku_code"].eq("STOCKOUT-1")]
     assert stockout.loc[stockout["month"].isin(["2025-03", "2025-04"]), "opening_stock"].eq(0).all()
 
@@ -186,3 +192,10 @@ def test_load_all_combines_suppliers_and_fills_missing_moq(synthetic_data_dir: P
     default_moq = tables["moq"].loc[tables["moq"]["sku_code"].eq("OUTLIER-1"), "moq"]
     assert default_moq.eq(1).all()
     assert len(tables["sku_ref"]) == 6
+    assert tuple(tables["current_stock"].columns) == TABLE_COLUMNS["current_stock"]
+    se_stock = tables["current_stock"].loc[tables["current_stock"]["supplier"].eq("SE")]
+    assert se_stock.set_index("sku_code").loc["SEASONAL-1", "free_stock"] == 11
+    assert se_stock.set_index("sku_code").loc["OUTLIER-1", "free_stock"] == 0
+    assert ("OUTLIER-1", "SE") in tables["current_stock"].attrs["estimated_keys"]
+    assert set(tables["sku_ref"]["unit"]) == {"шт"}
+    assert tables["sku_ref"]["article"].str.startswith("A-").all()
