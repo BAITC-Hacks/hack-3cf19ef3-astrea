@@ -191,6 +191,13 @@ def _filter_rows(
     return result.copy()
 
 
+def _category_label(category: object) -> str:
+    value = "без категории" if pd.isna(category) else str(category)
+    if value == "без категории":
+        return value
+    return f"SE, категория {value}"
+
+
 def _sort_orders(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.assign(
         _stock_unknown_rank=frame["stock_unknown"].fillna(False).astype(int),
@@ -262,6 +269,8 @@ def _show_grouped(
     for supplier, supplier_rows in frame.groupby("supplier", sort=False):
         st.subheader(str(supplier))
         display = supplier_rows[list(columns)].rename(columns=columns)
+        if "Категория" in display:
+            display["Категория"] = display["Категория"].map(_category_label)
         unknown_indices = set(
             supplier_rows.index[
                 supplier_rows.get("stock_unknown", pd.Series(False, index=supplier_rows.index))
@@ -309,11 +318,26 @@ def main() -> None:
         supplier_choice = st.selectbox("Поставщик", SUPPLIER_OPTIONS)
         forecast_label = st.selectbox("Метод прогноза", list(FORECAST_OPTIONS))
         forecast_choice = FORECAST_OPTIONS[forecast_label]
-        categories = [
-            "Все",
-            *sorted(data["sku_ref"]["category"].dropna().astype(str).unique()),
-        ]
-        category_choice = st.selectbox("Категория", categories)
+        category_choice = "Все"
+        if supplier_choice != "IEK":
+            category_source = data["sku_ref"]
+            if supplier_choice == "SE":
+                category_source = category_source.loc[
+                    category_source["supplier"].eq("SE")
+                ]
+            categories = [
+                "Все",
+                *sorted(
+                    category_source["category"].dropna().astype(str).unique()
+                ),
+            ]
+            category_choice = st.selectbox(
+                "Категория",
+                categories,
+                format_func=lambda value: (
+                    value if value == "Все" else _category_label(value)
+                ),
+            )
         sku_query = st.text_input("Фильтр по коду, артикулу или наименованию")
         lead_time_iek = int(
             st.number_input(

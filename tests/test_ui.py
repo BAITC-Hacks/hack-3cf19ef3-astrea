@@ -3,6 +3,7 @@ import pandas as pd
 from app.ui.streamlit_app import (
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
+    _category_label,
     _display_importance,
     _filter_rows,
     _needs_calculation,
@@ -75,6 +76,12 @@ def test_ml_importance_uses_russian_labels_and_percentage_shares() -> None:
         "Горизонт прогноза",
     ]
     assert display["Доля важности"].tolist() == [80.0, 20.0, 0.0]
+
+
+def test_category_labels_explain_se_category_codes() -> None:
+    assert _category_label("1") == "SE, категория 1"
+    assert _category_label(5) == "SE, категория 5"
+    assert _category_label("без категории") == "без категории"
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:
