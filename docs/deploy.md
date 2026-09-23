@@ -1,8 +1,16 @@
 # Деплой на VPS
 
-Приложение работает на VPS в Docker: Streamlit за Caddy с HTTPS и паролем.
+Приложение работает на VPS в Docker: Streamlit и PostgreSQL за Caddy с HTTPS и паролем.
+На сервере тот же `docker-compose.yml`, что и локально, плюс `docker-compose.prod.yml` с Caddy.
 Код копируется с Mac через `rsync`, поэтому серверу не нужен доступ к GitHub.
 Файлы деплоя описаны в `.planning/phases/05-deploy/PLAN.md`.
+
+**Локальный запуск** (на Mac или у жюри), без сервера:
+
+```bash
+cp .env.example .env
+docker compose up --build        # → http://localhost:8501
+```
 
 Нужно:
 - VPS с Linux, Docker и `docker compose` (плагин v2);
@@ -42,7 +50,7 @@ sudo ufw allow 80,443/tcp
 VPS_HOST=1.2.3.4 VPS_USER=user ./deploy/deploy.sh
 ```
 
-Скрипт скопирует код в `/opt/avtozakaz/` и остановится с подсказкой: на сервере ещё нет `deploy/.env`. Так и должно быть.
+Скрипт скопирует код в `/opt/avtozakaz/` и остановится с подсказкой: на сервере ещё нет `.env`. Так и должно быть.
 
 ## 4. Пароль и `.env` на сервере
 
@@ -55,20 +63,36 @@ docker run --rm caddy:2 caddy hash-password --plaintext 'придумай-пар
 Создай файл с настройками:
 
 ```bash
-cd /opt/avtozakaz/deploy
+cd /opt/avtozakaz
 cp .env.example .env
 nano .env
 ```
 
-Содержимое:
+Раскомментируй серверный блок и заполни. Должно получиться:
 
 ```
+POSTGRES_PASSWORD=...
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
 DOMAIN=autozakaz.example.com
 BASIC_AUTH_USER=jury
 BASIC_AUTH_HASH='$2a$14$...хэш целиком...'
 ```
 
+Строка `COMPOSE_FILE` подключает Caddy. Благодаря ей все команды `docker compose …` в этой папке работают без флагов `-f`.
+
 **Хэш обязательно в одинарных кавычках**, иначе символы `$` испортят значение.
+
+`POSTGRES_PASSWORD` — пароль базы данных. На сервере не оставляй `change-me` из примера. Руками его никто не вводит, так что сделай длинный случайный:
+
+```bash
+openssl rand -hex 24      # скопируй результат в строку POSTGRES_PASSWORD=
+```
+
+База хранит утверждённые заказы в Docker-томе `pg_data`, поэтому обновления её не стирают. Резервная копия при необходимости:
+
+```bash
+docker compose exec db pg_dump -U autozakaz autozakaz > backup.sql
+```
 
 ## 5. Запуск
 
@@ -81,7 +105,7 @@ VPS_HOST=1.2.3.4 VPS_USER=user ./deploy/deploy.sh
 Первая сборка образа занимает несколько минут. На сервере можно смотреть логи:
 
 ```bash
-cd /opt/avtozakaz/deploy
+cd /opt/avtozakaz
 docker compose ps
 docker compose logs -f caddy     # ждём строку об успешном получении сертификата
 ```
@@ -99,12 +123,13 @@ docker compose run --rm app pytest -q
 ```bash
 curl -sI https://autozakaz.example.com | head -1                   # HTTP/2 401 — без пароля не пускает
 curl -sI -u jury:пароль https://autozakaz.example.com | head -1     # HTTP/2 200
+nc -zv -w 3 1.2.3.4 8501; nc -zv -w 3 1.2.3.4 5432                 # оба должны отказать: наружу открыт только Caddy
 ```
 
 В браузере:
 1. Открой ссылку и войди.
 2. Дождись первого расчёта: ~30 с на загрузку данных, дальше быстро.
-3. Проверь фильтры и выгрузку xlsx.
+3. Проверь фильтры, выгрузку xlsx и утверждение тестового заказа (вкладка «История заказов»).
 
 **Открой приложение сам после каждого деплоя, до того как его увидит жюри.** Тогда первым медленный расчёт получишь ты, а не они.
 
@@ -126,7 +151,7 @@ VPS_HOST=1.2.3.4 VPS_USER=user ./deploy/deploy.sh
 
 | Симптом | Что проверить |
 |---|---|
-| Браузер не открывает сайт | `dig` возвращает IP VPS? Порты 80/443 открыты? `docker compose ps` — оба контейнера `running`? |
+| Браузер не открывает сайт | `dig` возвращает IP VPS? Порты 80/443 открыты? `docker compose ps` — все три контейнера (`app`, `db`, `caddy`) `running`? |
 | Ошибка сертификата | `docker compose logs caddy`. Чаще всего DNS ещё не обновился: подожди и `docker compose restart caddy` |
 | Пароль не подходит | хэш в `.env` целиком и в одинарных кавычках? После правки `.env`: `docker compose up -d` |
 | Страница открылась, но крутится бесконечно | `docker compose logs app`. Первый расчёт действительно ~30 с |

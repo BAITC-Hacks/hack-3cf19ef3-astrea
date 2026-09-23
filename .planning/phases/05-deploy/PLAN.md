@@ -10,42 +10,47 @@ Python 3.9 недоступен; сон через 12 ч). Разворачив�
 человека — согласие получено (утверждён план деплоя).
 
 **Порядок:** фаза делается **последней** (решение человека 2026-09-23) —
-после фазы 3 (включая задачу R) и README. Не начинать без отдельной команды.
+после фаз 7 и 4. Не начинать без отдельной команды.
 
-## Схема
+## Что уже есть после фазы 7
+
+`Dockerfile`, `.dockerignore`, `.streamlit/config.toml`, `docker-compose.yml`
+(`app` + `db`, порты только на `127.0.0.1`), `.env.example`. Локально
+`docker compose up --build` уже поднимает весь проект. Фаза 5 **только
+добавляет** HTTPS с паролем и доставку кода на сервер — образ и основной
+compose-файл те же.
+
+## Схема на сервере
 
 ```
-браузер ──https──► caddy (80/443, Let's Encrypt, basic_auth) ──► app:8501 (Streamlit)
-                   └─ docker compose, сеть по умолчанию, порт app наружу не публикуется
+браузер ──https──► caddy (80/443, Let's Encrypt, basic_auth)
+                     └──► app:8501 (Streamlit) ──► db:5432 (PostgreSQL, том pg_data)
 ```
 
-Код на сервер попадает через `rsync` с Mac (серверу не нужен доступ к
-приватному GitHub). Секреты — только в `deploy/.env` на сервере.
+На сервере в `/opt/avtozakaz/.env` задано
+`COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml` — поэтому любые
+команды `docker compose …` в этой папке сразу работают с Caddy, без флагов `-f`.
 
 ## Файлы
 
 | Файл | Содержание |
 |---|---|
-| `Dockerfile` | `FROM python:3.12-slim`; `WORKDIR /app`; сначала `COPY requirements.txt` + `pip install --no-cache-dir -r requirements.txt` (кэш слоёв); затем **отдельная строка на каждый каталог** (`COPY app ./app`, `COPY data ./data`, `COPY tests ./tests`, `COPY .streamlit ./.streamlit`, `COPY pytest.ini ./`) — несколько каталогов в одном `COPY` склеиваются в одну кучу и ломают структуру; `EXPOSE 8501`; `CMD ["streamlit", "run", "app/ui/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]` |
-| `.dockerignore` | `.venv`, `.git`, `__pycache__`, `.pytest_cache`, `deploy/`, `*.pyc` |
-| `.streamlit/config.toml` | `[server]` `headless = true`; `[browser]` `gatherUsageStats = false` |
-| `deploy/docker-compose.yml` | `app`: `build: ..` (контекст — корень репозитория), `restart: unless-stopped`, **без `ports`**. `caddy`: `image: caddy:2`, `ports: ["80:80", "443:443"]`, `volumes: ./Caddyfile:/etc/caddy/Caddyfile:ro`, `caddy_data:/data`, `caddy_config:/config`, `env_file: .env`, `depends_on: [app]`, `restart: unless-stopped`. Тома `caddy_data`, `caddy_config` объявить. |
+| `docker-compose.prod.yml` | только сервис `caddy`: `image: caddy:2`, `ports: ["80:80", "443:443"]`, `volumes: ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro`, `caddy_data:/data`, `caddy_config:/config`; `environment: DOMAIN, BASIC_AUTH_USER, BASIC_AUTH_HASH` из `.env` (через `${…:?}` — без них не стартует); `depends_on: [app]`, `restart: unless-stopped`. Тома `caddy_data`, `caddy_config`. Сервисы `app` и `db` здесь **не переопределять**. |
 | `deploy/Caddyfile` | `{$DOMAIN} {` / `basic_auth {` / `{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}` / `}` / `reverse_proxy app:8501` / `}` |
-| `deploy/.env.example` | `DOMAIN=autozakaz.example.com`, `BASIC_AUTH_USER=jury`, `BASIC_AUTH_HASH='...'` + комментарии: хэш — `docker run --rm caddy:2 caddy hash-password --plaintext '<пароль>'`; **значение в одинарных кавычках** (в bcrypt-хэше есть `$`); сам пароль в файл не писать |
-| `deploy/deploy.sh` | запускается на Mac из корня репозитория; `set -euo pipefail`; требует `VPS_HOST`, `VPS_USER` (понятная ошибка, если не заданы); `REMOTE_DIR=${REMOTE_DIR:-/opt/avtozakaz}`; `ssh` → `mkdir -p "$REMOTE_DIR"`; `rsync -az --delete --exclude .venv --exclude .git --exclude __pycache__ --exclude .pytest_cache --exclude deploy/.env ./ "$VPS_USER@$VPS_HOST:$REMOTE_DIR/"` (excluded-файлы `--delete` не удаляет — серверный `.env` цел); если на сервере нет `deploy/.env` — вывести подсказку из `docs/deploy.md` и остановиться; иначе `ssh ... "cd $REMOTE_DIR/deploy && docker compose up -d --build"` и `docker compose ps`. Сделать исполняемым (`chmod +x`). |
-| `.gitignore` | добавить `deploy/.env` |
+| `deploy/deploy.sh` | запускается на Mac из корня; `set -euo pipefail`; требует `VPS_HOST`, `VPS_USER` (понятная ошибка, если не заданы); `REMOTE_DIR=${REMOTE_DIR:-/opt/avtozakaz}`; `ssh` → `mkdir -p "$REMOTE_DIR"`; `rsync -az --delete --exclude .venv --exclude .git --exclude __pycache__ --exclude .pytest_cache --exclude .env ./ "$VPS_USER@$VPS_HOST:$REMOTE_DIR/"` (excluded-файлы `--delete` не трогает — серверный `.env` цел); если на сервере нет `$REMOTE_DIR/.env` — вывести подсказку «см. docs/deploy.md, шаг 4» и остановиться; иначе `ssh … "cd $REMOTE_DIR && docker compose up -d --build && docker compose ps"`. Исполняемый. |
+| `.env.example` | блок для сервера уже есть с фазы 7 — проверить, что там `COMPOSE_FILE`, `DOMAIN`, `BASIC_AUTH_USER`, `BASIC_AUTH_HASH=''` с комментарием: хэш из `docker run --rm caddy:2 caddy hash-password --plaintext '<пароль>'`, **в одинарных кавычках** (в bcrypt-хэше есть `$`) |
 
 `README.md` и `docs/deploy.md` не трогать — их ведёт Claude.
 
 ## Проверка (Codex)
 
-- Если на Mac есть Docker: `docker build -t avtozakaz .` и
-  `docker run --rm avtozakaz pytest -q` — все тесты зелёные на Python 3.12.
-  Плюс `docker compose -f deploy/docker-compose.yml config` с
-  `deploy/.env`, скопированным из `.env.example` (потом удалить) — без ошибок.
-- Если Docker на Mac нет — так и написать в отчёте; эту проверку делает
-  человек на VPS (шаг в `docs/deploy.md`).
-- `bash -n deploy/deploy.sh` — синтаксис скрипта корректен.
+- `docker compose -f docker-compose.yml -f docker-compose.prod.yml config`
+  с тестовым `.env` (скопирован из `.env.example`, серверный блок
+  раскомментирован, потом удалить) — без ошибок; у `app` и `db` порты только
+  на `127.0.0.1`, наружу — только 80/443 у `caddy`.
+- `bash -n deploy/deploy.sh`.
+- Если Docker на Mac запущен: `docker compose up --build` локально (без prod)
+  по-прежнему работает.
 - Обновить `.planning/STATE.md` (строка «5. Деплой»: файлы готовы, сервер —
   за человеком).
 
@@ -53,6 +58,8 @@ Python 3.9 недоступен; сон через 12 ч). Разворачив�
 
 1. `curl -sI https://<домен>` → `401` (без пароля не пускает).
 2. `curl -sI -u <логин>:<пароль> https://<домен>` → `200`, сертификат Let's Encrypt.
-3. Браузер: первый расчёт ~30 с, повторный с теми же параметрами — сразу;
-   фильтры и выгрузка xlsx работают.
-4. Повторный `deploy.sh` обновляет приложение и не затирает серверный `.env`.
+3. Снаружи порты 8501 и 5432 закрыты: `nc -zv <IP> 8501` и `nc -zv <IP> 5432` — отказ.
+4. Браузер: результат открывается, фильтры, выгрузка, утверждение тестового
+   заказа и «История заказов» работают.
+5. Повторный `deploy.sh` обновляет приложение, не затирает `.env` и не
+   стирает утверждённые заказы (том `pg_data`).
