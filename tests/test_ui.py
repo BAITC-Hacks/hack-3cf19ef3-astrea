@@ -58,7 +58,12 @@ def test_authenticated_navigation_has_four_expected_pages(monkeypatch) -> None:
     monkeypatch.setattr(application.st, "navigation", fake_navigation)
 
     assert application._navigation() == "navigation"
-    assert NAVIGATION_TITLES == ("Заказ", "Данные", "История", "Точность")
+    assert NAVIGATION_TITLES == (
+        "Заказ",
+        "Данные",
+        "История заказов",
+        "Точность",
+    )
     assert [page["title"] for page in captured["pages"]] == list(
         NAVIGATION_TITLES
     )

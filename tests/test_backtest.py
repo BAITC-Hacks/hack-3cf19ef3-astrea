@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from scripts.backtest import _supplier_metrics
+from app.engine.backtest import _supplier_metrics
 
 
 def test_supplier_metrics_are_per_sku_and_diagnose_partner_outliers() -> None:

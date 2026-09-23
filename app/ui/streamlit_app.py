@@ -40,7 +40,7 @@ from app.ui.theme import apply_theme  # noqa: E402
 
 
 DATA_DIR = ROOT / "data" / "raw"
-NAVIGATION_TITLES = ("Заказ", "Данные", "История", "Точность")
+NAVIGATION_TITLES = ("Заказ", "Данные", "История заказов", "Точность")
 
 
 def _authenticate(connection_url: str) -> dict[str, object] | None:
@@ -114,7 +114,7 @@ def _navigation() -> object:
         ),
         st.Page(
             history_page.render,
-            title="История",
+            title="История заказов",
             icon=":material/history:",
             url_path="history",
         ),
