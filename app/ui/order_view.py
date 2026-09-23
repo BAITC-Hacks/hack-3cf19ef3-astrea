@@ -7,7 +7,7 @@ import streamlit as st
 from app.db import save_order
 from app.export import export_xlsx
 from app.orders import apply_corrections, approvable_lines, default_edits, order_totals
-from app.ui.settings_view import _category_label
+from app.ui.settings_view import _category_label, reset_filters
 
 
 ORDER_COLUMNS = {
@@ -47,6 +47,14 @@ URGENCY_LABELS = {
 }
 EDITABLE_COLUMNS = {"approved_qty", "comment", "stock_checked"}
 DATABASE_DISABLED_MESSAGE = "Утверждение и история временно недоступны"
+
+
+def _empty_state(key: str) -> None:
+    empty, action = st.columns([4, 1])
+    empty.info("Нет позиций по фильтру")
+    if action.button("Сбросить фильтры", key=key, width="stretch"):
+        reset_filters()
+        st.rerun()
 
 
 def _filter_rows(
@@ -341,7 +349,7 @@ def render_order_tab(
     params: dict[str, object],
 ) -> list[pd.DataFrame]:
     if orders.empty:
-        st.info("Нет позиций по фильтру")
+        _empty_state("reset_order_filters")
         return []
     corrected = []
     for supplier, supplier_rows in orders.groupby("supplier", sort=False):
@@ -362,7 +370,7 @@ def render_order_tab(
 
 def render_dead_tab(frame: pd.DataFrame) -> None:
     if frame.empty:
-        st.info("Нет позиций по фильтру")
+        _empty_state("reset_no_sales_filters")
         return
     for supplier, rows in frame.groupby("supplier", sort=False):
         st.subheader(str(supplier))

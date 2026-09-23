@@ -16,6 +16,7 @@ from app.ui.streamlit_app import (
     _sort_orders,
     _summary_metrics,
 )
+from app.ui.settings_view import reset_filters
 
 
 def test_grouped_table_columns_prioritize_decision_fields() -> None:
@@ -47,6 +48,23 @@ def test_first_open_triggers_calculation() -> None:
     assert _needs_calculation(
         {"recommendation_result": object()}, button_pressed=True
     )
+
+
+def test_reset_filters_restores_defaults(monkeypatch) -> None:
+    state = {
+        "filter_supplier": "SE",
+        "filter_category": "5",
+        "filter_query": "автомат",
+    }
+    monkeypatch.setattr("app.ui.settings_view.st.session_state", state)
+
+    reset_filters()
+
+    assert state == {
+        "filter_supplier": "Оба",
+        "filter_category": "Все",
+        "filter_query": "",
+    }
 
 
 def test_summary_metrics_describe_supplier_orders() -> None:

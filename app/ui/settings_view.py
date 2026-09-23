@@ -37,6 +37,11 @@ FEATURE_LABELS = {
     "supplier_feature": "Поставщик",
     "category_feature": "Категория",
 }
+FILTER_DEFAULTS = {
+    "filter_supplier": "Оба",
+    "filter_category": "Все",
+    "filter_query": "",
+}
 
 
 @dataclass(frozen=True)
@@ -174,12 +179,26 @@ def _categories(data: Dict[str, pd.DataFrame], supplier: str) -> list[str]:
     return ["Все", *sorted(source["category"].dropna().astype(str).unique())]
 
 
+def _supplier_changed() -> None:
+    st.session_state["filter_category"] = "Все"
+
+
+def reset_filters() -> None:
+    for key, value in FILTER_DEFAULTS.items():
+        st.session_state[key] = value
+
+
 def render_controls(
     data: Dict[str, pd.DataFrame], data_dir: str
 ) -> AppControls:
     filter_columns = st.columns([1.0, 1.35, 3.2])
     with filter_columns[0]:
-        supplier = st.selectbox("Поставщик", SUPPLIER_OPTIONS)
+        supplier = st.selectbox(
+            "Поставщик",
+            SUPPLIER_OPTIONS,
+            key="filter_supplier",
+            on_change=_supplier_changed,
+        )
     with filter_columns[1]:
         category = st.selectbox(
             "Категория",
@@ -188,11 +207,13 @@ def render_controls(
                 value if value == "Все" else _category_label(value)
             ),
             disabled=supplier == "IEK",
+            key="filter_category",
         )
     with filter_columns[2]:
         query = st.text_input(
             "Поиск",
             placeholder="Код, артикул или наименование",
+            key="filter_query",
         )
 
     with st.expander("Настройки расчёта", expanded=False):
@@ -300,5 +321,6 @@ __all__ = [
     "initialize_database",
     "load_data",
     "render_controls",
+    "reset_filters",
     "train_ml_resource",
 ]
