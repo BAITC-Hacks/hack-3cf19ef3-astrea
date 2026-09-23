@@ -183,6 +183,12 @@ def _sort_orders(frame: pd.DataFrame) -> pd.DataFrame:
     ).drop(columns=["_stock_unknown_rank", "_urgency_rank"])
 
 
+def _needs_calculation(state: object, button_pressed: bool) -> bool:
+    """Calculate on first open and whenever the user explicitly requests it."""
+
+    return button_pressed or "recommendation_result" not in state
+
+
 def _show_grouped(
     frame: pd.DataFrame,
     columns: dict[str, str],
@@ -301,7 +307,15 @@ def main() -> None:
             "используйте для сравнения."
         )
 
-    if run_calculation:
+    current_parameters = (
+        lead_time_iek,
+        lead_time_se,
+        coverage_days,
+        planned_growth_iek,
+        planned_growth_se,
+        forecast_choice,
+    )
+    if _needs_calculation(st.session_state, run_calculation):
         st.session_state["recommendation_result"] = calculate(
             str(DATA_DIR),
             lead_time_iek,
@@ -311,28 +325,9 @@ def main() -> None:
             planned_growth_se,
             forecast_choice,
         )
-        st.session_state["calculation_parameters"] = (
-            lead_time_iek,
-            lead_time_se,
-            coverage_days,
-            planned_growth_iek,
-            planned_growth_se,
-            forecast_choice,
-        )
-
-    if "recommendation_result" not in st.session_state:
-        st.write("Задайте параметры и нажмите «Рассчитать».")
-        return
+        st.session_state["calculation_parameters"] = current_parameters
 
     previous_parameters = st.session_state.get("calculation_parameters")
-    current_parameters = (
-        lead_time_iek,
-        lead_time_se,
-        coverage_days,
-        planned_growth_iek,
-        planned_growth_se,
-        forecast_choice,
-    )
     if previous_parameters != current_parameters:
         st.warning("Параметры изменены. Нажмите «Рассчитать», чтобы обновить результат.")
 
