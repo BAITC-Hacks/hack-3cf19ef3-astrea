@@ -117,11 +117,17 @@ def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
         "our_mdape": mdape(
             by_sku["actual"].to_numpy(), by_sku["our_forecast"].to_numpy()
         ),
+        "our_bias": float(
+            by_sku["our_forecast"].sum() / by_sku["actual"].sum() - 1.0
+        ),
         "partner_wape": wape(
             by_sku["actual"].to_numpy(), by_sku["partner_forecast"].to_numpy()
         ),
         "partner_mdape": mdape(
             by_sku["actual"].to_numpy(), by_sku["partner_forecast"].to_numpy()
+        ),
+        "partner_bias": float(
+            by_sku["partner_forecast"].sum() / by_sku["actual"].sum() - 1.0
         ),
         "partner_outlier_sku_count": int(partner_outlier.sum()),
         "partner_outlier_error_share": outlier_error_share,
@@ -132,6 +138,9 @@ def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
         )
         metrics["ml_mdape"] = mdape(
             by_sku["actual"].to_numpy(), by_sku["ml_forecast"].to_numpy()
+        )
+        metrics["ml_bias"] = float(
+            by_sku["ml_forecast"].sum() / by_sku["actual"].sum() - 1.0
         )
     return metrics
 
@@ -205,15 +214,18 @@ def main() -> None:
         print(f"{row.supplier}: SKU={row.sku_count}")
         print(
             f"  Formula: WAPE={row.our_wape:.4f} ({row.our_wape:.2%}), "
-            f"MdAPE={row.our_mdape:.4f} ({row.our_mdape:.2%})"
+            f"MdAPE={row.our_mdape:.4f} ({row.our_mdape:.2%}), "
+            f"bias={row.our_bias:+.2%}"
         )
         print(
             f"  ML: WAPE={row.ml_wape:.4f} ({row.ml_wape:.2%}), "
-            f"MdAPE={row.ml_mdape:.4f} ({row.ml_mdape:.2%})"
+            f"MdAPE={row.ml_mdape:.4f} ({row.ml_mdape:.2%}), "
+            f"bias={row.ml_bias:+.2%}"
         )
         print(
             f"  Partner: WAPE={row.partner_wape:.4f} ({row.partner_wape:.2%}), "
-            f"MdAPE={row.partner_mdape:.4f} ({row.partner_mdape:.2%})"
+            f"MdAPE={row.partner_mdape:.4f} ({row.partner_mdape:.2%}), "
+            f"bias={row.partner_bias:+.2%}"
         )
         print(
             "  Partner outliers (>10× 12-month average): "

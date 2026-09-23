@@ -50,7 +50,7 @@ REVIEW_COLUMNS = {
 }
 URGENCY_ORDER = {"высокая": 0, "средняя": 1, "низкая": 2}
 FORECAST_OPTIONS = {
-    "По умолчанию (IEK: ML, SE: формула)": "default",
+    "По умолчанию (формула)": "default",
     "Формула": "formula",
     "ML": "ml",
 }
@@ -100,7 +100,10 @@ def calculate(
         },
     }
     data = load_data(data_dir)
-    if forecast_choice == "formula":
+    if forecast_choice == "formula" or (
+        forecast_choice == "default"
+        and set(DEFAULT_FORECAST_METHODS.values()) == {"formula"}
+    ):
         return build_recommendations(
             data, EngineConfig(**config_values, forecast_method="formula")
         )
@@ -271,6 +274,12 @@ def main() -> None:
         )
         run_calculation = st.button(
             "Рассчитать", type="primary", width="stretch"
+        )
+
+    if forecast_choice == "ml":
+        st.warning(
+            "ML на истории занижает общий спрос на ~23% (IEK) и ~26% (SE); "
+            "используйте для сравнения."
         )
 
     if run_calculation:
