@@ -12,8 +12,18 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.config import COVERAGE_DAYS, LEAD_TIME_DAYS, EngineConfig  # noqa: E402
-from app.engine.pipeline import build_recommendations  # noqa: E402
+from app.config import (  # noqa: E402
+    COVERAGE_DAYS,
+    DEFAULT_FORECAST_METHODS,
+    LEAD_TIME_DAYS,
+    EngineConfig,
+)
+from app.engine.ml import (  # noqa: E402
+    build_training_frame,
+    feature_importance,
+    train_model,
+)
+from app.engine.pipeline import build_recommendations, prepare_forecasts  # noqa: E402
 from app.export import export_xlsx  # noqa: E402
 from app.loaders import load_all  # noqa: E402
 
@@ -39,6 +49,11 @@ REVIEW_COLUMNS = {
     "reason": "Причина",
 }
 URGENCY_ORDER = {"высокая": 0, "средняя": 1, "низкая": 2}
+FORECAST_OPTIONS = {
+    "По умолчанию (IEK: ML, SE: формула)": "default",
+    "Формула": "formula",
+    "ML": "ml",
+}
 
 
 @st.cache_data(show_spinner="Загружаем данные из 1С…")
@@ -46,6 +61,22 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
     """Load source workbooks once until their cache key changes."""
 
     return load_all(Path(data_dir))
+
+
+@st.cache_resource(show_spinner="Обучаем ML-модель…")
+def train_ml_resource(data_dir: str) -> Tuple[object, pd.DataFrame]:
+    """Train the challenger once and cache its model and feature importance."""
+
+    data = load_data(data_dir)
+    as_of = pd.Timestamp(data["sales_tx"]["date"].max())
+    last_full_month = as_of.to_period("M") - 1
+    _, segments, _, stockouts = prepare_forecasts(data, last_full_month)
+    training = build_training_frame(
+        stockouts.monthly, segments, data["sku_ref"], last_full_month
+    )
+    model = train_model(training)
+    importance = feature_importance(model, training)
+    return model, importance
 
 
 @st.cache_data(show_spinner="Рассчитываем рекомендации…")
@@ -56,18 +87,51 @@ def calculate(
     coverage_days: int,
     planned_growth_iek_percent: float,
     planned_growth_se_percent: float,
+    forecast_choice: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Cache each calculation parameter combination on top of cached loading."""
 
-    config = EngineConfig(
-        lead_time_days={"IEK": lead_time_iek, "SE": lead_time_se},
-        coverage_days=coverage_days,
-        planned_growth={
+    config_values = {
+        "lead_time_days": {"IEK": lead_time_iek, "SE": lead_time_se},
+        "coverage_days": coverage_days,
+        "planned_growth": {
             "IEK": planned_growth_iek_percent / 100.0,
             "SE": planned_growth_se_percent / 100.0,
         },
+    }
+    data = load_data(data_dir)
+    if forecast_choice == "formula":
+        return build_recommendations(
+            data, EngineConfig(**config_values, forecast_method="formula")
+        )
+
+    model, _ = train_ml_resource(data_dir)
+    ml_result = build_recommendations(
+        data,
+        EngineConfig(**config_values, forecast_method="ml"),
+        ml_model=model,
     )
-    return build_recommendations(load_data(data_dir), config)
+    if forecast_choice == "ml":
+        return ml_result
+
+    formula_orders, review_needed = build_recommendations(
+        data, EngineConfig(**config_values, forecast_method="formula")
+    )
+    ml_orders, _ = ml_result
+    orders = pd.concat(
+        [
+            ml_orders.loc[
+                ml_orders["supplier"].map(DEFAULT_FORECAST_METHODS).eq("ml")
+            ],
+            formula_orders.loc[
+                formula_orders["supplier"]
+                .map(DEFAULT_FORECAST_METHODS)
+                .eq("formula")
+            ],
+        ],
+        ignore_index=True,
+    )
+    return orders, review_needed
 
 
 def _filter_rows(
@@ -153,6 +217,8 @@ def main() -> None:
     with st.sidebar:
         st.header("Параметры расчёта")
         supplier_choice = st.selectbox("Поставщик", SUPPLIER_OPTIONS)
+        forecast_label = st.selectbox("Метод прогноза", list(FORECAST_OPTIONS))
+        forecast_choice = FORECAST_OPTIONS[forecast_label]
         categories = [
             "Все",
             *sorted(data["sku_ref"]["category"].dropna().astype(str).unique()),
@@ -215,6 +281,7 @@ def main() -> None:
             coverage_days,
             planned_growth_iek,
             planned_growth_se,
+            forecast_choice,
         )
         st.session_state["calculation_parameters"] = (
             lead_time_iek,
@@ -222,6 +289,7 @@ def main() -> None:
             coverage_days,
             planned_growth_iek,
             planned_growth_se,
+            forecast_choice,
         )
 
     if "recommendation_result" not in st.session_state:
@@ -235,6 +303,7 @@ def main() -> None:
         coverage_days,
         planned_growth_iek,
         planned_growth_se,
+        forecast_choice,
     )
     if previous_parameters != current_parameters:
         st.warning("Параметры изменены. Нажмите «Рассчитать», чтобы обновить результат.")
@@ -266,6 +335,16 @@ def main() -> None:
             file_name=f"avtozakaz_{as_of:%Y-%m-%d}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+        if forecast_choice in ("default", "ml"):
+            _, importance = train_ml_resource(str(DATA_DIR))
+            with st.expander("Что влияет на ML-прогноз"):
+                st.dataframe(
+                    importance.rename(
+                        columns={"feature": "Признак", "importance": "Важность"}
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                )
     with review_tab:
         _show_grouped(visible_review, REVIEW_COLUMNS)
 

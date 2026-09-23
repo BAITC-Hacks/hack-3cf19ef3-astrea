@@ -10,6 +10,7 @@ LEAD_TIME_DAYS = {"IEK": 24, "SE": 35}
 COVERAGE_DAYS = 30
 SERVICE_Z = 1.65
 PLANNED_GROWTH = {"IEK": 0.0, "SE": 0.0}
+DEFAULT_FORECAST_METHODS = {"IEK": "ml", "SE": "formula"}
 
 
 @dataclass(frozen=True)
