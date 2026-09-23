@@ -10,6 +10,7 @@ from app.models import validate_model
 from .cleaning import CleaningResult, clean_sales
 from .explain import add_explanations
 from .forecast import build_forecast_profiles
+from .ml import build_prediction_frame, build_training_frame, predict, train_model
 from .order import calculate_orders
 from .segmentation import segment_skus
 from .stockout import StockoutResult, restore_stockouts
@@ -49,7 +50,9 @@ def prepare_forecasts(
 
 
 def build_recommendations(
-    data: Dict[str, pd.DataFrame], config: Optional[EngineConfig] = None
+    data: Dict[str, pd.DataFrame],
+    config: Optional[EngineConfig] = None,
+    ml_model: Optional[object] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Build human-reviewable orders and a separate list of dead SKUs."""
 
@@ -58,6 +61,24 @@ def build_recommendations(
     as_of = resolve_as_of(data["sales_tx"], config)
     last_full_month = as_of.to_period("M") - 1
     profiles, segments, cleaning, stockouts = prepare_forecasts(data, last_full_month)
+    ml_forecasts = None
+    if config.forecast_method == "ml":
+        if ml_model is None:
+            training = build_training_frame(
+                stockouts.monthly,
+                segments,
+                data["sku_ref"],
+                last_full_month,
+            )
+            ml_model = train_model(training)
+        prediction_frame = build_prediction_frame(
+            stockouts.monthly,
+            segments,
+            data["sku_ref"],
+            last_full_month,
+            range(1, 7),
+        )
+        ml_forecasts = predict(ml_model, prediction_frame)
 
     calculations = calculate_orders(
         profiles,
@@ -67,6 +88,7 @@ def build_recommendations(
         data["moq"],
         as_of,
         config,
+        ml_forecasts,
     )
     explained = add_explanations(calculations, cleaning.summary, stockouts.summary)
     explained = explained.merge(data["sku_ref"], on=KEYS, how="left")

@@ -38,6 +38,7 @@ def calculate_orders(
     moq: pd.DataFrame,
     as_of: pd.Timestamp,
     config: EngineConfig,
+    ml_forecasts: pd.DataFrame = None,
 ) -> pd.DataFrame:
     """Apply coverage window, safety stock, inventory and MOQ rules."""
 
@@ -53,6 +54,11 @@ def calculate_orders(
     base["stock_unknown"] = base["stock_unknown"].fillna(False).astype(bool)
     base["in_transit"] = base["in_transit"].fillna(0.0).astype(float)
     base["moq"] = base["moq"].fillna(1).astype(int)
+    ml_map = {}
+    if ml_forecasts is not None and not ml_forecasts.empty:
+        ml_frame = ml_forecasts.copy()
+        ml_frame["period"] = pd.PeriodIndex(ml_frame["month"], freq="M")
+        ml_map = ml_frame.set_index([*KEYS, "period"])["ml_forecast"].to_dict()
 
     rows = []
     as_of = pd.Timestamp(as_of).normalize()
@@ -68,15 +74,39 @@ def calculate_orders(
 
         if item["segment"] == "regular":
             days = pd.date_range(as_of, periods=window_days, freq="D")
-            demand_window = sum(
-                forecast_value(item, day.to_period("M")) / day.days_in_month for day in days
-            ) * forecast_multiplier
+            formula_forecast = forecast_value(item, as_of.to_period("M"))
+            ml_forecast = ml_map.get(
+                (item["sku_code"], supplier, as_of.to_period("M"))
+            )
+            ml_fallback_used = False
+            selected_daily = []
+            for day in days:
+                period = day.to_period("M")
+                formula_value = forecast_value(item, period)
+                selected_value = formula_value
+                if config.forecast_method == "ml":
+                    ml_value = ml_map.get((item["sku_code"], supplier, period))
+                    if ml_value is None:
+                        ml_fallback_used = True
+                    else:
+                        selected_value = float(ml_value)
+                selected_daily.append(selected_value / day.days_in_month)
+            demand_window = sum(selected_daily) * forecast_multiplier
             safety_stock = float(
                 config.service_z * float(item["sigma"]) * math.sqrt(lead_time / 30.0)
             )
             current_forecast = (
-                forecast_value(item, as_of.to_period("M")) * forecast_multiplier
+                float(ml_forecast)
+                if config.forecast_method == "ml" and ml_forecast is not None
+                else formula_forecast
+            ) * forecast_multiplier
+            formula_forecast *= forecast_multiplier
+            ml_forecast = (
+                float(ml_forecast) * forecast_multiplier
+                if ml_forecast is not None
+                else np.nan
             )
+            forecast_method = config.forecast_method
             current_season = float(item[f"season_{as_of.month}"])
             level = float(item["level"])
             growth = float(item["growth"])
@@ -85,6 +115,10 @@ def calculate_orders(
             demand_window = float(item["max_level"]) * forecast_multiplier
             safety_stock = 0.0
             current_forecast = float(item["max_level"]) * forecast_multiplier
+            formula_forecast = current_forecast
+            ml_forecast = np.nan
+            ml_fallback_used = False
+            forecast_method = "formula"
             current_season = np.nan
             level = np.nan
             growth = np.nan
@@ -104,6 +138,10 @@ def calculate_orders(
                 "sigma": sigma,
                 "seasonal_index": current_season,
                 "forecast_monthly": current_forecast,
+                "formula_forecast_monthly": formula_forecast,
+                "ml_forecast_monthly": ml_forecast,
+                "forecast_method": forecast_method,
+                "ml_fallback_used": ml_fallback_used,
                 "planned_growth": planned_growth,
                 "window_days": window_days,
                 "demand_window": float(demand_window),

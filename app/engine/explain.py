@@ -45,11 +45,24 @@ def add_explanations(
             )
         else:
             growth_percent = (float(item["growth"]) - 1.0) * 100.0
-            text = (
-                f"Регулярный спрос: уровень {_number(item['level'])} шт./мес., "
+            formula_parts = (
+                f"уровень {_number(item['level'])} шт./мес., "
                 f"рост {growth_percent:+.0f}% г/г, сезонность текущего месяца "
-                f"×{float(item['seasonal_index']):.2f}; "
+                f"×{float(item['seasonal_index']):.2f}"
             )
+            if item["forecast_method"] == "ml":
+                text = (
+                    f"Регулярный спрос: ML-прогноз "
+                    f"{_number(item['ml_forecast_monthly'])} шт./мес.; формула "
+                    f"{_number(item['formula_forecast_monthly'])} шт./мес. "
+                    f"({formula_parts}); "
+                )
+                if bool(item["ml_fallback_used"]):
+                    text += (
+                        "месяцы за горизонтом ML 6 мес. рассчитаны по формуле; "
+                    )
+            else:
+                text = f"Регулярный спрос: {formula_parts}; "
             if item["outlier_count"]:
                 text += (
                     f"исключено разовых продаж {_number(item['excluded_outlier_qty'])} шт. "

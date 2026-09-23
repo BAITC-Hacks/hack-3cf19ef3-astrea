@@ -1,7 +1,7 @@
 """Configuration values fixed by the approved phase-2 plan."""
 
 from dataclasses import dataclass, field
-from typing import Mapping, Optional
+from typing import Literal, Mapping, Optional
 
 import pandas as pd
 
@@ -25,6 +25,7 @@ class EngineConfig:
     planned_growth: Mapping[str, float] = field(
         default_factory=lambda: dict(PLANNED_GROWTH)
     )
+    forecast_method: Literal["formula", "ml"] = "formula"
 
 
 def resolve_as_of(sales_tx: pd.DataFrame, config: EngineConfig) -> pd.Timestamp:
