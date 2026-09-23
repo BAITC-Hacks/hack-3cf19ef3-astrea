@@ -72,3 +72,33 @@ def test_export_has_supplier_sheets_and_explanation_sheet() -> None:
     assert workbook["Проверить остаток"]["G1"].value == "Обоснование"
     assert workbook["Обоснование"].max_row == 3
     assert all(not sheet.merged_cells.ranges for sheet in workbook.worksheets)
+
+
+def test_export_can_include_only_the_filtered_supplier_sheet() -> None:
+    recommendations = pd.DataFrame(
+        [
+            {
+                "sku_code": "SKU-SE",
+                "article": "ART-SE",
+                "name": "Товар SE",
+                "unit": "шт",
+                "category": "1",
+                "supplier": "SE",
+                "recommended_qty": 5,
+                "stock_unknown": False,
+                "urgency": "низкая",
+                "explanation": "Расчётное обоснование",
+            }
+        ]
+    )
+
+    workbook = openpyxl.load_workbook(
+        BytesIO(export_xlsx(recommendations, suppliers=("SE",)))
+    )
+
+    assert workbook.sheetnames == [
+        "SE",
+        "Проверить остаток",
+        "Обоснование",
+    ]
+    assert "IEK" not in workbook.sheetnames

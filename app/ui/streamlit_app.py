@@ -173,6 +173,12 @@ def _category_label(category: object) -> str:
     return f"SE, категория {value}"
 
 
+def _export_suppliers(supplier_choice: str) -> tuple[str, ...]:
+    if supplier_choice == "Оба":
+        return ("IEK", "SE")
+    return (supplier_choice,)
+
+
 def _sort_orders(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.assign(
         _stock_unknown_rank=frame["stock_unknown"].fillna(False).astype(int),
@@ -411,7 +417,9 @@ def main() -> None:
     )
     with recommendations_tab:
         _show_grouped(visible_orders, ORDER_COLUMNS, ORDER_COLUMN_CONFIG)
-        workbook = export_xlsx(visible_orders)
+        workbook = export_xlsx(
+            visible_orders, suppliers=_export_suppliers(supplier_choice)
+        )
         stock_review_count = int(
             visible_orders["stock_unknown"].fillna(False).astype(bool).sum()
         )

@@ -6,6 +6,7 @@ from app.ui.streamlit_app import (
     FORECAST_OPTIONS,
     _category_label,
     _display_importance,
+    _export_suppliers,
     _filter_rows,
     _needs_calculation,
     _sort_orders,
@@ -90,6 +91,12 @@ def test_forecast_options_mark_default_and_experimental_methods() -> None:
         "Формула (по умолчанию)": "formula",
         "ML (экспериментально)": "ml",
     }
+
+
+def test_export_suppliers_follow_supplier_filter() -> None:
+    assert _export_suppliers("Оба") == ("IEK", "SE")
+    assert _export_suppliers("IEK") == ("IEK",)
+    assert _export_suppliers("SE") == ("SE",)
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:
