@@ -1,4 +1,4 @@
-"""Visual system for the Astrea AI Streamlit interface."""
+"""Visual system for the Astrea Streamlit interface."""
 
 import streamlit as st
 

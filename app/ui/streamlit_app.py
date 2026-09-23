@@ -1,4 +1,4 @@
-"""Astrea AI Streamlit application assembly."""
+"""Astrea Streamlit application assembly."""
 
 from pathlib import Path
 import sys
@@ -50,8 +50,8 @@ def _brand_header(current_user: dict[str, object], as_of: object) -> None:
     with st.container(key="brand_header"):
         title, account = st.columns([4, 1])
         with title:
-            st.title("Astrea AI")
-            st.text(f"Автозаказ поставщикам  |  данные на {as_of:%d.%m.%Y}")
+            st.title("Astrea")
+            st.text(f"Расчёт заказов поставщикам  |  данные на {as_of:%d.%m.%Y}")
         with account:
             st.text(str(current_user["full_name"]))
             if st.button("Выйти", width="stretch"):
@@ -72,14 +72,14 @@ def _authenticate(connection_url: str) -> dict[str, object] | None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Astrea AI", page_icon="A", layout="wide")
+    st.set_page_config(page_title="Astrea", page_icon="A", layout="wide")
     apply_theme()
 
     connection_url = database_url() or ""
     database_ready, _ = initialize_database(connection_url)
     if not database_ready:
         with st.container(key="auth_panel", border=True):
-            st.title("Astrea AI")
+            st.title("Astrea")
             st.error("Сервис временно недоступен")
         return
 

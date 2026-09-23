@@ -310,7 +310,7 @@ def render_supplier_order(
         st.download_button(
             "Скачать xlsx",
             data=export_xlsx(corrected, suppliers=(supplier,)),
-            file_name=f"avtozakaz_{data_as_of:%Y-%m-%d}_{supplier}.xlsx",
+            file_name=f"astrea_{data_as_of:%Y-%m-%d}_{supplier}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_order_{supplier}",
             width="stretch",

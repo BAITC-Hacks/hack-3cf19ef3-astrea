@@ -29,8 +29,8 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
     """Render login/registration and return a newly authenticated user."""
 
     with st.container(key="auth_panel", border=True):
-        st.title("Astrea AI")
-        st.subheader("Автозаказ поставщикам")
+        st.title("Astrea")
+        st.subheader("Расчёт заказов поставщикам")
         mode = st.radio(
             "Режим",
             ["Вход", "Регистрация"],

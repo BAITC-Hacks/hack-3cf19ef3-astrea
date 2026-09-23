@@ -2,15 +2,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: autozakaz
-      POSTGRES_USER: autozakaz
+      POSTGRES_DB: astrea
+      POSTGRES_USER: astrea
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте в .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U autozakaz -d autozakaz"]
+      test: ["CMD-SHELL", "pg_isready -U astrea -d astrea"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -19,7 +19,7 @@ services:
   app:
     build: .
     environment:
-      DATABASE_URL: postgresql://autozakaz:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/autozakaz
+      DATABASE_URL: postgresql://astrea:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/astrea
       INVITE_CODE: ${INVITE_CODE:-}
     depends_on:
       db:
