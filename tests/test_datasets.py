@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.datasets import DatasetValidationError, detect_file_type, validate_dataset
+from app.loaders import load_all
 
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
@@ -69,3 +70,13 @@ def test_corrupt_workbook_error_contains_original_name() -> None:
 
     with pytest.raises(DatasetValidationError, match="испорченный.xlsx"):
         validate_dataset("IEK", [broken])
+
+
+def test_demo_loader_reports_each_of_twelve_workbooks() -> None:
+    progress: list[tuple[str, float]] = []
+
+    load_all(RAW, on_progress=lambda stage, fraction: progress.append((stage, fraction)))
+
+    assert len(progress) == 12
+    assert progress[-1][1] == 1.0
+    assert all(stage.startswith("Читаем ") for stage, _ in progress)

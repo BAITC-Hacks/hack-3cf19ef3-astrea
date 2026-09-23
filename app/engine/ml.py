@@ -1,6 +1,6 @@
 """Global gradient-boosting challenger for regular-SKU demand forecasts."""
 
-from typing import Iterable, List
+from typing import Callable, Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -416,7 +416,10 @@ def build_prediction_frame(
     return pd.DataFrame(rows, columns=columns)
 
 
-def train_model(frame: pd.DataFrame) -> HistGradientBoostingRegressor:
+def train_model(
+    frame: pd.DataFrame,
+    on_progress: Optional[Callable[[str, float], None]] = None,
+) -> HistGradientBoostingRegressor:
     """Fit the pre-registered HistGradientBoostingRegressor configuration."""
 
     model = HistGradientBoostingRegressor(
@@ -430,6 +433,8 @@ def train_model(frame: pd.DataFrame) -> HistGradientBoostingRegressor:
         random_state=0,
     )
     model.fit(frame[FEATURE_COLUMNS], frame["target"])
+    if on_progress is not None:
+        on_progress("Обучение модели", 4.5 / 6)
     model.training_rows_ = len(frame)
     return model
 

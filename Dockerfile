@@ -9,9 +9,10 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY data ./data
-COPY db ./db
 COPY scripts ./scripts
+COPY data ./data
+RUN python scripts/build_cache.py
+COPY db ./db
 COPY tests ./tests
 COPY .streamlit ./.streamlit
 COPY pytest.ini ./pytest.ini

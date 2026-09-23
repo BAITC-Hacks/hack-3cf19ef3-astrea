@@ -1,15 +1,18 @@
 """Data loading, calculation cache and compact application controls."""
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from pathlib import Path
+from typing import Callable, Dict, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
 
 from app.config import COVERAGE_DAYS, LEAD_TIME_DAYS, EngineConfig
+from app.data_cache import load_with_disk_cache
+from app.datasets import DatasetContext
 from app.engine.ml import build_training_frame, feature_importance, train_model
 from app.engine.pipeline import build_recommendations, prepare_forecasts
-from app.datasets import DatasetContext, load_dataset_context
+from app.ui.loading_view import LoadingView
 
 
 SUPPLIER_OPTIONS = ("Оба", "IEK", "SE")
@@ -41,6 +44,7 @@ FILTER_DEFAULTS = {
     "filter_category": "Все",
     "filter_query": "",
 }
+CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache"
 
 
 @dataclass(frozen=True)
@@ -82,20 +86,23 @@ class AppControls:
         }
 
 
-@st.cache_data(show_spinner="Загружаем данные из 1С")
+@st.cache_data(show_spinner=False)
 def load_data(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
+    _on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> Dict[str, pd.DataFrame]:
-    del dataset_key
-    context = DatasetContext({}, path_items, {})
-    return load_dataset_context(context)
+    context = DatasetContext(
+        {"IEK": dataset_key[0], "SE": dataset_key[1]}, path_items, {}
+    )
+    return load_with_disk_cache(context, CACHE_DIR, _on_progress)
 
 
-@st.cache_resource(show_spinner="Обучаем ML-модель")
+@st.cache_resource(show_spinner=False)
 def train_ml_resource(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
+    _on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> Tuple[object, pd.DataFrame]:
     data = load_data(path_items, dataset_key)
     as_of = pd.Timestamp(data["sales_tx"]["date"].max())
@@ -104,12 +111,14 @@ def train_ml_resource(
     training = build_training_frame(
         stockouts.monthly, segments, data["sku_ref"], last_full_month
     )
-    model = train_model(training)
+    model = train_model(training, on_progress=_on_progress)
     importance = feature_importance(model, training)
+    if _on_progress is not None:
+        _on_progress("Оценка признаков", 1.0)
     return model, importance
 
 
-@st.cache_data(show_spinner="Считаем рекомендации")
+@st.cache_data(show_spinner=False)
 def calculate(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
@@ -119,6 +128,7 @@ def calculate(
     planned_growth_iek_percent: float,
     planned_growth_se_percent: float,
     forecast_choice: str,
+    _on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     config_values = {
         "lead_time_days": {"IEK": lead_time_iek, "SE": lead_time_se},
@@ -131,13 +141,16 @@ def calculate(
     data = load_data(path_items, dataset_key)
     if forecast_choice == "formula":
         return build_recommendations(
-            data, EngineConfig(**config_values, forecast_method="formula")
+            data,
+            EngineConfig(**config_values, forecast_method="formula"),
+            on_progress=_on_progress,
         )
-    model, _ = train_ml_resource(path_items, dataset_key)
+    model, _ = train_ml_resource(path_items, dataset_key, _on_progress)
     return build_recommendations(
         data,
         EngineConfig(**config_values, forecast_method="ml"),
         ml_model=model,
+        on_progress=_on_progress,
     )
 
 
@@ -293,7 +306,14 @@ def render_controls(
             st.warning(
                 "ML занижает общий спрос примерно на 23% для IEK и 26% для SE."
             )
-            _, importance = train_ml_resource(path_items, dataset_key)
+            loading = LoadingView()
+            loading.update("Обучение модели", 0.05)
+            try:
+                _, importance = train_ml_resource(
+                    path_items, dataset_key, loading.update
+                )
+            finally:
+                loading.close()
             st.dataframe(
                 _display_importance(importance),
                 column_config={

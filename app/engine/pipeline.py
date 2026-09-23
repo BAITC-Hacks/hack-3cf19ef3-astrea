@@ -1,6 +1,6 @@
 """End-to-end orchestration of the approved demand and order formulas."""
 
-from typing import Dict, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 import pandas as pd
 
@@ -20,12 +20,18 @@ KEYS = ["sku_code", "supplier"]
 
 
 def prepare_forecasts(
-    data: Dict[str, pd.DataFrame], last_full_month: pd.Period
+    data: Dict[str, pd.DataFrame],
+    last_full_month: pd.Period,
+    on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, CleaningResult, StockoutResult]:
     """Prepare segments and regular-SKU profiles through an explicit full month."""
 
     segments = segment_skus(data["sales_monthly"], last_full_month)
+    if on_progress is not None:
+        on_progress("Сегментация", 1 / 6)
     cleaning = clean_sales(data["sales_monthly"], data["sales_tx"], last_full_month)
+    if on_progress is not None:
+        on_progress("Очистка продаж", 2 / 6)
     cleaned = cleaning.monthly.copy()
     cleaned["period"] = pd.PeriodIndex(cleaned["month"], freq="M")
     first_month = pd.Period(last_full_month, freq="M") - 11
@@ -45,7 +51,11 @@ def prepare_forecasts(
         columns="period"
     )
     stockouts = restore_stockouts(cleaning.monthly, stock)
+    if on_progress is not None:
+        on_progress("Восстановление дефицита", 3 / 6)
     profiles = build_forecast_profiles(stockouts.monthly, segments, last_full_month)
+    if on_progress is not None:
+        on_progress("Прогноз", 4 / 6)
     return profiles, segments, cleaning, stockouts
 
 
@@ -53,6 +63,7 @@ def build_recommendations(
     data: Dict[str, pd.DataFrame],
     config: Optional[EngineConfig] = None,
     ml_model: Optional[object] = None,
+    on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Build human-reviewable orders and a separate list of dead SKUs."""
 
@@ -60,7 +71,9 @@ def build_recommendations(
     config = config or EngineConfig()
     as_of = resolve_as_of(data["sales_tx"], config)
     last_full_month = as_of.to_period("M") - 1
-    profiles, segments, cleaning, stockouts = prepare_forecasts(data, last_full_month)
+    profiles, segments, cleaning, stockouts = prepare_forecasts(
+        data, last_full_month, on_progress
+    )
     ml_forecasts = None
     if config.forecast_method == "ml":
         if ml_model is None:
@@ -70,7 +83,7 @@ def build_recommendations(
                 data["sku_ref"],
                 last_full_month,
             )
-            ml_model = train_model(training)
+            ml_model = train_model(training, on_progress=on_progress)
         prediction_frame = build_prediction_frame(
             stockouts.monthly,
             segments,
@@ -90,6 +103,8 @@ def build_recommendations(
         config,
         ml_forecasts,
     )
+    if on_progress is not None:
+        on_progress("Расчёт заказа", 5 / 6)
     explained = add_explanations(calculations, cleaning.summary, stockouts.summary)
     explained = explained.merge(data["sku_ref"], on=KEYS, how="left")
     orders = explained.loc[explained["recommended_qty"].gt(0)].copy()
@@ -128,4 +143,6 @@ def build_recommendations(
             "reason",
         ]
     ].reset_index(drop=True)
+    if on_progress is not None:
+        on_progress("Обоснования", 1.0)
     return orders, review_needed

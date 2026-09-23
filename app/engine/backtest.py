@@ -1,7 +1,7 @@
 """Historical comparison of formula, partner and ML forecasts."""
 
 from time import perf_counter
-from typing import Dict
+from typing import Callable, Dict, Optional
 
 import pandas as pd
 
@@ -139,7 +139,10 @@ def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
     return metrics
 
 
-def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+def run_backtest(
+    data: Dict[str, pd.DataFrame],
+    on_progress: Optional[Callable[[str, float], None]] = None,
+) -> pd.DataFrame:
     """Return robust accuracy metrics and diagnostics for Jul-Aug 2026."""
 
     monthly = data["sales_monthly"].copy()
@@ -154,6 +157,8 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         .agg(active_months=lambda values: int(values.gt(0).sum()))
     )
     eligible = eligible.loc[eligible["active_months"].ge(9), KEYS]
+    if on_progress is not None:
+        on_progress("Готовим проверку", 0.35)
 
     profiles, segments, _, stockouts = prepare_forecasts(data, TRAIN_END)
     profiles = profiles.merge(eligible, on=KEYS, how="inner")
@@ -167,6 +172,8 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     training_started = perf_counter()
     model = train_model(training)
     training_seconds = perf_counter() - training_started
+    if on_progress is not None:
+        on_progress("Обучение модели", 0.75)
     ml_frame = build_prediction_frame(
         stockouts.monthly,
         segments,
@@ -195,6 +202,8 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     results.attrs["ml_training_rows"] = len(training)
     results.attrs["ml_training_seconds"] = training_seconds
     results.attrs["feature_importance"] = feature_importance(model, training)
+    if on_progress is not None:
+        on_progress("Сравниваем методы", 1.0)
     return results
 
 

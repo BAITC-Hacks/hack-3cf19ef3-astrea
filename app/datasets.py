@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
-from typing import BinaryIO, Iterable, Mapping
+from typing import BinaryIO, Callable, Iterable, Mapping, Optional
 
 import pandas as pd
 
@@ -309,10 +309,25 @@ def resolve_dataset_context(
     return DatasetContext(ids, path_items, current_rows)
 
 
-def load_dataset_context(context: DatasetContext) -> dict[str, pd.DataFrame]:
+def demo_dataset_context(demo_dir: Path) -> DatasetContext:
+    """Return the deterministic context used before any supplier upload."""
+
+    paths = supplier_paths(Path(demo_dir))
+    path_items = tuple(
+        (supplier, file_type, str(paths[supplier][file_type]))
+        for supplier in ("IEK", "SE")
+        for file_type in REQUIRED_TYPES
+    )
+    return DatasetContext({"IEK": None, "SE": None}, path_items, {})
+
+
+def load_dataset_context(
+    context: DatasetContext,
+    on_progress: Optional[Callable[[str, float], None]] = None,
+) -> dict[str, pd.DataFrame]:
     """Load canonical tables for a resolved pair of supplier datasets."""
 
-    return load_from_paths(context.paths)
+    return load_from_paths(context.paths, on_progress=on_progress)
 
 
 def save_validated_dataset(
@@ -353,6 +368,7 @@ __all__ = [
     "TYPE_LABELS",
     "ValidatedDataset",
     "detect_file_type",
+    "demo_dataset_context",
     "load_dataset_context",
     "resolve_dataset_context",
     "save_validated_dataset",

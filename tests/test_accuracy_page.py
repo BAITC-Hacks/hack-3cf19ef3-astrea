@@ -41,7 +41,7 @@ import pandas as pd
 import streamlit as st
 import app.ui.pages.accuracy_page as page
 
-page.calculate_accuracy = lambda path_items, dataset_key: pd.DataFrame([
+page.calculate_accuracy = lambda path_items, dataset_key, on_progress=None: pd.DataFrame([
     {
         "supplier": supplier, "sku_count": 10,
         "our_wape": 0.30, "our_mdape": 0.20, "our_bias": 0.05,

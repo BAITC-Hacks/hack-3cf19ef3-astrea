@@ -1,7 +1,7 @@
 """Public entry point for loading both suppliers into one data model."""
 
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Callable, Dict, Iterable, List, Optional
 
 import pandas as pd
 
@@ -127,8 +127,20 @@ def _build_current_stock(
 
 def load_from_paths(
     paths: Dict[str, Dict[str, Path]],
+    on_progress: Optional[Callable[[str, float], None]] = None,
+    extra_files: Iterable[Path] = (),
 ) -> Dict[str, pd.DataFrame]:
     """Load both suppliers from an explicit, validated workbook map."""
+
+    extras = tuple(extra_files)
+    total_files = 10 + len(extras)
+    completed = 0
+
+    def advance(path: Path) -> None:
+        nonlocal completed
+        completed += 1
+        if on_progress is not None:
+            on_progress(f"Читаем {path.name}", completed / total_files)
 
     tables: Dict[str, pd.DataFrame] = {}
     for table_name, function_name in (
@@ -137,19 +149,20 @@ def load_from_paths(
         ("stock_monthly", "load_stock_monthly"),
         ("in_transit", "load_in_transit"),
     ):
-        tables[table_name] = pd.concat(
-            [
-                getattr(iek, function_name)(paths["IEK"][table_name]),
-                getattr(se, function_name)(paths["SE"][table_name]),
-            ],
-            ignore_index=True,
-        )
+        frames = []
+        for supplier, loader in (("IEK", iek), ("SE", se)):
+            path = paths[supplier][table_name]
+            frames.append(getattr(loader, function_name)(path))
+            advance(path)
+        tables[table_name] = pd.concat(frames, ignore_index=True)
 
     tables["sku_ref"] = _combine_references(paths)
-    raw_moq = pd.concat(
-        [iek.load_moq(paths["IEK"]["moq"]), se.load_moq(paths["SE"]["moq"])],
-        ignore_index=True,
-    )
+    moq_frames = []
+    for supplier, loader in (("IEK", iek), ("SE", se)):
+        path = paths[supplier]["moq"]
+        moq_frames.append(loader.load_moq(path))
+        advance(path)
+    raw_moq = pd.concat(moq_frames, ignore_index=True)
     tables["moq"] = tables["sku_ref"][["sku_code", "supplier"]].merge(
         raw_moq, on=["sku_code", "supplier"], how="left"
     )
@@ -161,14 +174,24 @@ def load_from_paths(
         se.load_current_stock(paths["SE"]["in_transit"]),
     )
 
+    for path in extras:
+        advance(path)
+
     validate_model(tables)
     return tables
 
 
-def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
+def load_all(
+    data_dir: Path,
+    on_progress: Optional[Callable[[str, float], None]] = None,
+) -> Dict[str, pd.DataFrame]:
     """Load IEK and Systeme Electric workbooks into canonical DataFrames."""
 
-    return load_from_paths(supplier_paths(Path(data_dir)))
+    data_dir = Path(data_dir)
+    seasonal = sorted(data_dir.glob("*/Сезонность*.xlsx"))
+    return load_from_paths(
+        supplier_paths(data_dir), on_progress=on_progress, extra_files=seasonal
+    )
 
 
 __all__ = ["load_all", "load_from_paths", "supplier_paths"]

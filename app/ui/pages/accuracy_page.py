@@ -5,6 +5,7 @@ import streamlit as st
 
 from app.datasets import DatasetContext, load_dataset_context
 from app.engine.backtest import run_backtest
+from app.ui.loading_view import LoadingView, render_loading_error
 
 
 METHODS = (
@@ -38,15 +39,24 @@ METRIC_COLUMNS = {
 }
 
 
-@st.cache_data(show_spinner="Сравниваем методы на истории")
+@st.cache_data(show_spinner=False)
 def calculate_accuracy(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
+    _on_progress=None,
 ) -> pd.DataFrame:
     """Run and cache the comparison for the selected pair of datasets."""
 
     del dataset_key
-    return run_backtest(load_dataset_context(DatasetContext({}, path_items, {})))
+    load_progress = (
+        None
+        if _on_progress is None
+        else lambda stage, fraction: _on_progress(stage, fraction * 0.3)
+    )
+    data = load_dataset_context(
+        DatasetContext({}, path_items, {}), on_progress=load_progress
+    )
+    return run_backtest(data, on_progress=_on_progress)
 
 
 def _accuracy_table(row: pd.Series) -> pd.DataFrame:
@@ -73,7 +83,17 @@ def _highlight_best(row: pd.Series) -> list[str]:
 def render() -> None:
     st.title("Точность")
     context = st.session_state["dataset_context"]
-    results = calculate_accuracy(context.path_items, context.cache_key)
+    loading = LoadingView()
+    loading.update("Сравниваем методы", 0.02)
+    try:
+        results = calculate_accuracy(
+            context.path_items, context.cache_key, loading.update
+        )
+    except Exception as error:
+        loading.close()
+        render_loading_error(f"Не удалось сравнить методы: {error}", "accuracy")
+        return
+    loading.close()
 
     columns = st.columns(2)
     for column, supplier in zip(columns, ("IEK", "SE")):

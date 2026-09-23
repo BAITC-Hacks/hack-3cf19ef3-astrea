@@ -14,6 +14,7 @@ from app.datasets import (
 )
 from app.db import list_datasets, set_current_dataset
 from app.ui.settings_view import load_data
+from app.ui.loading_view import LoadingView, render_loading_error
 
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/app/uploads"))
@@ -178,7 +179,15 @@ def render() -> None:
     context = st.session_state["dataset_context"]
     connection_url = str(st.session_state["connection_url"])
     current_user = st.session_state["current_user"]
-    data = load_data(context.path_items, context.cache_key)
+    loading = LoadingView()
+    loading.update("Загружаем данные", 0.02)
+    try:
+        data = load_data(context.path_items, context.cache_key, loading.update)
+    except Exception as error:
+        loading.close()
+        render_loading_error(f"Не удалось загрузить данные: {error}", "datasets")
+        return
+    loading.close()
 
     feedback = st.session_state.pop("dataset_feedback", None)
     if feedback:

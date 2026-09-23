@@ -257,6 +257,28 @@ def test_r6_rounds_need_up_to_moq() -> None:
     assert round_to_moq(14, 6) == 18
 
 
+def test_recommendation_progress_reports_all_stages_without_changing_result() -> None:
+    data = make_data()
+    stages: list[tuple[str, float]] = []
+
+    baseline = build_recommendations(data)
+    with_progress = build_recommendations(
+        data, on_progress=lambda stage, fraction: stages.append((stage, fraction))
+    )
+
+    pd.testing.assert_frame_equal(with_progress[0], baseline[0])
+    pd.testing.assert_frame_equal(with_progress[1], baseline[1])
+    assert [stage for stage, _ in stages] == [
+        "Сегментация",
+        "Очистка продаж",
+        "Восстановление дефицита",
+        "Прогноз",
+        "Расчёт заказа",
+        "Обоснования",
+    ]
+    assert stages[-1][1] == 1.0
+
+
 def test_segmentation_separates_regular_sparse_and_dead() -> None:
     data = make_data()
     segments = segment_skus(data["sales_monthly"], pd.Period("2026-08", freq="M"))

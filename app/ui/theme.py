@@ -213,6 +213,27 @@ h2, h3 {
   white-space: nowrap;
 }
 
+[class*="st-key-loading_error_"] {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 999999;
+  width: min(420px, calc(100vw - 2rem));
+  padding: 1rem;
+  transform: translate(-50%, -50%);
+  background: var(--astrea-surface);
+  box-shadow: 0 28px 80px rgba(23, 33, 28, 0.16);
+}
+
+[class*="st-key-loading_error_"]::before {
+  content: "";
+  position: fixed;
+  inset: -100vh -100vw;
+  z-index: -1;
+  background: rgba(247, 249, 248, 0.92);
+  backdrop-filter: blur(7px);
+}
+
 .astrea-profile-copy strong {
   color: var(--astrea-ink);
   font-size: 0.88rem;

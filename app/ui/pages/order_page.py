@@ -1,6 +1,7 @@
 """Supplier order calculation page."""
 
 from collections.abc import Callable
+import logging
 import pandas as pd
 import streamlit as st
 
@@ -17,6 +18,10 @@ from app.ui.settings_view import (
     load_data,
     render_controls,
 )
+from app.ui.loading_view import LoadingView, render_loading_error
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def render(
@@ -31,11 +36,16 @@ def render(
     path_items = context.path_items
 
     st.title("Заказ")
+    loading = LoadingView()
+    loading.update("Загружаем данные", 0.02)
     try:
-        data = load_fn(path_items, dataset_key)
+        data = load_fn(path_items, dataset_key, loading.update)
     except Exception as error:
-        st.error(f"Не удалось загрузить данные: {error}")
+        loading.close()
+        LOGGER.exception("Could not load the current dataset")
+        render_loading_error(f"Не удалось загрузить данные: {error}", "data")
         return
+    loading.close()
 
     as_of = pd.Timestamp(data["sales_tx"]["date"].max()).date()
     st.text(f"Данные на {as_of:%d.%m.%Y}")
@@ -45,9 +55,21 @@ def render(
 
     dataset_changed = st.session_state.get("calculation_dataset_key") != dataset_key
     if _needs_calculation(st.session_state, controls.recalculate) or dataset_changed:
-        st.session_state["recommendation_result"] = calculate_fn(
-            path_items, dataset_key, *controls.calculation_key
-        )
+        loading = LoadingView()
+        loading.update("Считаем рекомендации", 0.02)
+        try:
+            st.session_state["recommendation_result"] = calculate_fn(
+                path_items,
+                dataset_key,
+                *controls.calculation_key,
+                loading.update,
+            )
+        except Exception as error:
+            loading.close()
+            LOGGER.exception("Could not build recommendations")
+            render_loading_error(f"Не удалось выполнить расчёт: {error}", "calculation")
+            return
+        loading.close()
         st.session_state["calculation_parameters"] = calculation_key
         st.session_state["calculation_dataset_key"] = dataset_key
 

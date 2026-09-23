@@ -5,6 +5,7 @@ __pycache__
 .pytest_cache
 .env
 uploads/
+data/cache/
 deploy/
 docs/
 .planning/
