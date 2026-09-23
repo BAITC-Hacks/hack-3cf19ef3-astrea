@@ -3,6 +3,7 @@ import pandas as pd
 from app.ui.streamlit_app import (
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
+    _display_importance,
     _filter_rows,
     _needs_calculation,
     _sort_orders,
@@ -56,6 +57,24 @@ def test_summary_metrics_describe_supplier_orders() -> None:
         "high_urgency": 1,
         "stock_unknown": 1,
     }
+
+
+def test_ml_importance_uses_russian_labels_and_percentage_shares() -> None:
+    importance = pd.DataFrame(
+        {
+            "feature": ["zero_share_12", "same_month_last_year", "horizon"],
+            "importance": [0.04, 0.01, -0.01],
+        }
+    )
+
+    display = _display_importance(importance)
+
+    assert display["Признак"].tolist() == [
+        "Доля месяцев без продаж за 12 мес.",
+        "Продажи в тот же месяц год назад",
+        "Горизонт прогноза",
+    ]
+    assert display["Доля важности"].tolist() == [80.0, 20.0, 0.0]
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:

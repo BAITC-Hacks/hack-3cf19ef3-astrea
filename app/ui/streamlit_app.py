@@ -68,6 +68,25 @@ FORECAST_OPTIONS = {
     "Формула": "formula",
     "ML": "ml",
 }
+FEATURE_LABELS = {
+    "demand_lag_0": "Продажи в последнем месяце",
+    "demand_lag_1": "Продажи месяц назад",
+    "demand_lag_2": "Продажи два месяца назад",
+    "demand_lag_5": "Продажи пять месяцев назад",
+    "demand_lag_11": "Продажи одиннадцать месяцев назад",
+    "rolling_mean_3": "Средние продажи за 3 месяца",
+    "rolling_mean_6": "Средние продажи за 6 месяцев",
+    "same_month_last_year": "Продажи в тот же месяц год назад",
+    "sku_season": "Сезонность товара",
+    "supplier_season": "Сезонность поставщика",
+    "growth_yoy": "Изменение спроса год к году",
+    "zero_share_12": "Доля месяцев без продаж за 12 мес.",
+    "stockout_months_12": "Месяцы с вероятным дефицитом за 12 мес.",
+    "target_month": "Месяц прогноза",
+    "horizon": "Горизонт прогноза",
+    "supplier_feature": "Поставщик",
+    "category_feature": "Категория",
+}
 
 
 @st.cache_data(show_spinner="Загружаем данные из 1С…")
@@ -215,6 +234,21 @@ def _show_summary(frame: pd.DataFrame) -> None:
         columns[1].metric("Штук всего", metrics["quantity"])
         columns[2].metric("Высокая срочность", metrics["high_urgency"])
         columns[3].metric("Проверить остаток", metrics["stock_unknown"])
+
+
+def _display_importance(importance: pd.DataFrame) -> pd.DataFrame:
+    """Translate ML features and express their positive importance as shares."""
+
+    display = importance[["feature", "importance"]].copy()
+    positive = display["importance"].clip(lower=0.0)
+    total = float(positive.sum())
+    display["importance"] = positive / total * 100.0 if total else 0.0
+    display["feature"] = display["feature"].map(FEATURE_LABELS).fillna(
+        display["feature"]
+    )
+    return display.rename(
+        columns={"feature": "Признак", "importance": "Доля важности"}
+    )
 
 
 def _show_grouped(
@@ -387,13 +421,17 @@ def main() -> None:
             file_name=f"avtozakaz_{as_of:%Y-%m-%d}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-        if forecast_choice in ("default", "ml"):
+        if forecast_choice == "ml":
             _, importance = train_ml_resource(str(DATA_DIR))
             with st.expander("Что влияет на ML-прогноз"):
                 st.dataframe(
-                    importance.rename(
-                        columns={"feature": "Признак", "importance": "Важность"}
-                    ),
+                    _display_importance(importance),
+                    column_config={
+                        "Признак": st.column_config.TextColumn(width="large"),
+                        "Доля важности": st.column_config.NumberColumn(
+                            width="small", format="%.1f%%"
+                        ),
+                    },
                     width="stretch",
                     hide_index=True,
                 )
