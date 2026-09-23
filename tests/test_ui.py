@@ -84,6 +84,46 @@ def test_profile_initials_use_first_two_name_parts() -> None:
     assert _initials("") == "A"
 
 
+def test_authentication_is_restored_from_persistent_session(monkeypatch) -> None:
+    state = {}
+    query_params = {"session": "persistent-token"}
+    expected = {
+        "id": 7,
+        "email": "manager@example.com",
+        "full_name": "Менеджер",
+    }
+    monkeypatch.setattr(application.st, "session_state", state)
+    monkeypatch.setattr(application.st, "query_params", query_params)
+    monkeypatch.setattr(
+        application,
+        "authenticate_session",
+        lambda token, connection_url: expected,
+    )
+    monkeypatch.setattr(
+        application,
+        "render_auth_screen",
+        lambda connection_url: (_ for _ in ()).throw(
+            AssertionError("login form must not be rendered")
+        ),
+    )
+
+    assert application._authenticate("postgresql://configured") == expected
+    assert state["current_user"] == expected
+    assert state["_auth_token"] == "persistent-token"
+    assert query_params["session"] == "persistent-token"
+
+
+def test_authenticated_session_restores_token_after_page_navigation(monkeypatch) -> None:
+    user = {"id": 7, "email": "manager@example.com", "full_name": "Менеджер"}
+    state = {"current_user": user, "_auth_token": "persistent-token"}
+    query_params = {}
+    monkeypatch.setattr(application.st, "session_state", state)
+    monkeypatch.setattr(application.st, "query_params", query_params)
+
+    assert application._authenticate("postgresql://configured") == user
+    assert query_params["session"] == "persistent-token"
+
+
 def test_first_open_triggers_calculation() -> None:
     assert _needs_calculation({}, button_pressed=False)
     assert not _needs_calculation(

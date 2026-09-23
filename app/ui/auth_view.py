@@ -5,7 +5,7 @@ from typing import Optional
 
 import streamlit as st
 
-from app.auth import RegistrationError, authenticate, register
+from app.auth import RegistrationError, authenticate, create_session, register
 from app.ui.brand import logo_html
 
 
@@ -53,12 +53,18 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
                 )
             if submitted:
                 try:
-                    return register(
+                    user = register(
                         email,
                         full_name,
                         password,
                         connection_url=connection_url,
                     )
+                    return {
+                        **user,
+                        "_session_token": create_session(
+                            int(user["id"]), connection_url
+                        ),
+                    }
                 except RegistrationError as error:
                     st.error(str(error))
                 except Exception:
@@ -87,7 +93,12 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
             else:
                 st.session_state.pop("login_attempts", None)
                 st.session_state.pop("login_locked_until", None)
-                return user
+                return {
+                    **user,
+                    "_session_token": create_session(
+                        int(user["id"]), connection_url
+                    ),
+                }
     return None
 
 

@@ -155,10 +155,73 @@ def authenticate(
     return {key: user[key] for key in ("id", "email", "full_name")}
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_session(
+    user_id: int,
+    connection_url: Optional[str] = None,
+) -> str:
+    """Create a persistent bearer session and return its one-time raw token."""
+
+    token = secrets.token_urlsafe(32)
+    psycopg, _ = _driver()
+    with psycopg.connect(_connection_url(connection_url)) as connection:
+        connection.execute(
+            "INSERT INTO auth_sessions (token_hash, user_id) VALUES (%s, %s)",
+            (_token_hash(token), int(user_id)),
+        )
+    return token
+
+
+def authenticate_session(
+    token: str,
+    connection_url: Optional[str] = None,
+) -> Optional[dict[str, object]]:
+    """Return the user attached to a persistent session token."""
+
+    if not token:
+        return None
+    psycopg, dict_row = _driver()
+    with psycopg.connect(
+        _connection_url(connection_url), row_factory=dict_row
+    ) as connection:
+        user = connection.execute(
+            """
+            SELECT users.id, users.email, users.full_name
+            FROM auth_sessions
+            JOIN users ON users.id = auth_sessions.user_id
+            WHERE auth_sessions.token_hash = %s
+            """,
+            (_token_hash(token),),
+        ).fetchone()
+    return None if user is None else dict(user)
+
+
+def revoke_session(
+    token: str,
+    connection_url: Optional[str] = None,
+) -> None:
+    """Invalidate one persistent session token."""
+
+    if not token:
+        return
+    psycopg, _ = _driver()
+    with psycopg.connect(_connection_url(connection_url)) as connection:
+        connection.execute(
+            "DELETE FROM auth_sessions WHERE token_hash = %s",
+            (_token_hash(token),),
+        )
+
+
 __all__ = [
     "RegistrationError",
     "authenticate",
+    "authenticate_session",
+    "create_session",
     "hash_password",
     "register",
+    "revoke_session",
     "verify_password",
 ]

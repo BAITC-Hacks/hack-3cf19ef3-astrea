@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.auth import authenticate_session, revoke_session  # noqa: E402
 from app.db import database_url  # noqa: E402
 from app.datasets import resolve_dataset_context  # noqa: E402
 from app.ui.auth_view import render_auth_screen  # noqa: E402
@@ -50,11 +51,25 @@ NAVIGATION_TITLES = ("Заказ", "Данные", "История заказо�
 def _authenticate(connection_url: str) -> dict[str, object] | None:
     current_user = st.session_state.get("current_user")
     if current_user is not None:
+        token = str(st.session_state.get("_auth_token", ""))
+        if token and st.query_params.get("session") != token:
+            st.query_params["session"] = token
         return current_user
+    token = str(st.query_params.get("session", ""))
+    if token:
+        current_user = authenticate_session(token, connection_url)
+        if current_user is not None:
+            st.session_state["current_user"] = current_user
+            st.session_state["_auth_token"] = token
+            return current_user
+        st.query_params.pop("session", None)
     current_user = render_auth_screen(connection_url)
     if current_user is None:
         return None
+    token = str(current_user.pop("_session_token"))
+    st.query_params["session"] = token
     st.session_state["current_user"] = current_user
+    st.session_state["_auth_token"] = token
     st.rerun()
     return None
 
@@ -95,7 +110,17 @@ def _render_sidebar_profile(current_user: dict[str, object]) -> None:
                 icon=":material/logout:",
                 width="stretch",
             ):
-                st.session_state.clear()
+                token = str(
+                    st.session_state.get("_auth_token")
+                    or st.query_params.get("session", "")
+                )
+                try:
+                    revoke_session(
+                        token, str(st.session_state.get("connection_url", ""))
+                    )
+                finally:
+                    st.query_params.pop("session", None)
+                    st.session_state.clear()
                 st.rerun()
 
 

@@ -12,7 +12,14 @@ pytestmark = pytest.mark.skipif(
 if DATABASE_URL:
     import psycopg
 
-    from app.auth import RegistrationError, authenticate, register
+    from app.auth import (
+        RegistrationError,
+        authenticate,
+        authenticate_session,
+        create_session,
+        register,
+        revoke_session,
+    )
     from app.db import ensure_schema, get_order_lines, list_orders, save_order
     from app.db import (
         allocate_dataset_id,
@@ -120,6 +127,23 @@ def test_register_authenticate_and_reject_duplicate_email() -> None:
     finally:
         with psycopg.connect(DATABASE_URL) as connection:
             connection.execute("DELETE FROM users WHERE email = %s", (email,))
+
+
+def test_persistent_session_survives_lookup_until_revoked() -> None:
+    ensure_schema(DATABASE_URL)
+    email = f"pytest-session-{uuid4()}@example.com"
+    user = register(email, "Постоянная сессия", "correct-password", DATABASE_URL)
+    token = create_session(int(user["id"]), DATABASE_URL)
+    try:
+        assert authenticate_session(token, DATABASE_URL) == user
+        assert authenticate_session("wrong-token", DATABASE_URL) is None
+
+        revoke_session(token, DATABASE_URL)
+
+        assert authenticate_session(token, DATABASE_URL) is None
+    finally:
+        with psycopg.connect(DATABASE_URL) as connection:
+            connection.execute("DELETE FROM users WHERE id = %s", (user["id"],))
 
 
 def test_order_records_current_user_id() -> None:
