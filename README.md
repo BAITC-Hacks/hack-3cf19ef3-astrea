@@ -1,6 +1,16 @@
 # hack-3cf19ef3-astrea
 Hackathon team repository for Astrea
 
+## Стек (утверждено на этапе 1, `.planning/PROJECT.md`)
+
+Python 3 + Streamlit. Зависимости — только: `pandas`, `numpy`, `openpyxl`,
+`streamlit`, `pytest` (см. `requirements.txt`, создаёт Codex в фазе 1).
+Любая другая зависимость — по согласованию с человеком (AGENTS.md).
+
+Этот раздел заменяется полноценным README в фазе 4
+(`.planning/phases/04-readme/PLAN.md`), промпт ниже используется как
+чек-лист структуры, а не как готовый текст.
+
 Промпт для README:
 Вот промпт, который участники смогут просто вставить в Codex:
 «Проанализируй текущий проект и создай для него полноценный README.md на
