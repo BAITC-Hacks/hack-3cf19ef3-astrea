@@ -6,6 +6,7 @@ from app.ui.streamlit_app import (
     REVIEW_COLUMNS,
     FORECAST_OPTIONS,
     _category_label,
+    _details_points,
     _display_importance,
     _draft_changes,
     _export_suppliers,
@@ -23,17 +24,17 @@ def test_grouped_table_columns_prioritize_decision_fields() -> None:
         "Наименование",
         "Количество",
         "Срочность",
-        "Обоснование",
         "Артикул",
         "Категория",
     ]
     assert list(REVIEW_COLUMNS.values()) == [
         "Код 1С",
         "Наименование",
-        "Причина",
         "Артикул",
         "Категория",
     ]
+    assert "Обоснование" not in ORDER_COLUMNS.values()
+    assert "Причина" not in REVIEW_COLUMNS.values()
     assert "supplier" not in ORDER_COLUMNS
     assert "supplier" not in REVIEW_COLUMNS
 
@@ -91,8 +92,8 @@ def test_category_labels_explain_se_category_codes() -> None:
 
 def test_forecast_options_mark_default_and_experimental_methods() -> None:
     assert FORECAST_OPTIONS == {
-        "Формула (по умолчанию)": "formula",
-        "ML (экспериментально)": "ml",
+        "Формула": "formula",
+        "ML, экспериментально": "ml",
     }
 
 
@@ -155,7 +156,7 @@ _approval_controls("IEK", False)
 
     assert not app.exception
     assert app.button[0].disabled
-    assert "утверждение и история отключены" in app.info[0].value
+    assert "временно недоступны" in app.info[0].value
 
 
 def test_editor_draft_restores_changed_quantities() -> None:
@@ -186,6 +187,34 @@ def test_editor_draft_restores_changed_quantities() -> None:
     assert changes == drafts
 
 
+def test_order_details_use_structured_calculation_fields() -> None:
+    row = pd.Series(
+        {
+            "level": 120.4,
+            "growth": 1.15,
+            "seasonal_index": 1.2,
+            "excluded_outlier_qty": 50,
+            "stockout_added_qty": 25,
+            "window_days": 54,
+            "demand_window": 260,
+            "safety_stock": 40,
+            "free_stock": 30,
+            "in_transit": 20,
+            "moq": 6,
+            "recommended_qty": 252,
+        }
+    )
+
+    points = _details_points(row)
+
+    assert len(points) == 7
+    assert "база 120 шт./мес." in points[0]
+    assert "исключено 50 шт." in points[0]
+    assert "восстановлено 25 шт." in points[0]
+    assert "Рост год к году: +15%" in points[1]
+    assert points[-1] == "MOQ 6 шт., итог 252 шт."
+
+
 def test_unauthenticated_page_does_not_load_partner_data() -> None:
     app = AppTest.from_string(
         """
@@ -205,3 +234,68 @@ application.main()
 
     assert not app.exception
     assert not app.dataframe
+
+
+def test_authenticated_page_shows_summary_and_order_table() -> None:
+    app = AppTest.from_string(
+        """
+import pandas as pd
+import streamlit as st
+import app.ui.streamlit_app as application
+
+application.database_url = lambda: "postgresql://configured"
+application.initialize_database = lambda connection_url: (True, "")
+application.load_data = lambda data_dir: {
+    "sales_tx": pd.DataFrame({"date": [pd.Timestamp("2026-09-22")]}),
+    "sku_ref": pd.DataFrame({
+        "supplier": ["IEK"], "category": ["без категории"]
+    }),
+}
+order = pd.DataFrame([{
+    "sku_code": "SKU-1", "article": "ART-1", "name": "Товар",
+    "unit": "шт", "category": "без категории", "supplier": "IEK",
+    "recommended_qty": 12, "stock_unknown": False, "urgency": "высокая",
+    "explanation": "Расчёт", "moq": 6, "level": 4.0, "growth": 1.0,
+    "seasonal_index": 1.0, "excluded_outlier_qty": 0.0,
+    "stockout_added_qty": 0.0, "window_days": 54, "demand_window": 8.0,
+    "safety_stock": 4.0, "free_stock": 0.0, "in_transit": 0.0,
+}])
+no_sales = pd.DataFrame(columns=[
+    "sku_code", "article", "name", "unit", "category", "supplier"
+])
+application.calculate = lambda *args: (order, no_sales)
+application.render_history = lambda connection_url: None
+st.session_state["current_user"] = {
+    "id": 1, "email": "manager@example.com", "full_name": "Менеджер"
+}
+application.main()
+"""
+    ).run(timeout=15)
+
+    assert not app.exception
+    assert [metric.value for metric in app.metric] == ["1", "12", "1", "0"]
+    assert app.dataframe
+    assert "Обоснование" not in app.dataframe[0].value.columns
+
+
+def test_line_details_panel_contains_reasoning_and_edit_fields() -> None:
+    app = AppTest.from_string(
+        """
+import pandas as pd
+from app.ui.order_view import render_line_details
+
+render_line_details("IEK", pd.Series({
+    "sku_code": "SKU-1", "supplier": "IEK", "recommended_qty": 12,
+    "approved_qty": 12, "comment": "", "stock_checked": True,
+    "stock_unknown": False, "moq": 6, "level": 4.0, "growth": 1.0,
+    "seasonal_index": 1.0, "excluded_outlier_qty": 0.0,
+    "stockout_added_qty": 0.0, "window_days": 54, "demand_window": 8.0,
+    "safety_stock": 4.0, "free_stock": 0.0, "in_transit": 0.0,
+}))
+"""
+    ).run(timeout=10)
+
+    assert not app.exception
+    assert app.subheader[0].value == "Почему 12 шт."
+    assert app.number_input[0].label == "Количество"
+    assert app.text_input[0].label == "Комментарий"
