@@ -194,8 +194,11 @@ def test_load_all_combines_suppliers_and_fills_missing_moq(synthetic_data_dir: P
     assert len(tables["sku_ref"]) == 6
     assert tuple(tables["current_stock"].columns) == TABLE_COLUMNS["current_stock"]
     se_stock = tables["current_stock"].loc[tables["current_stock"]["supplier"].eq("SE")]
+    iek_stock = tables["current_stock"].loc[tables["current_stock"]["supplier"].eq("IEK")]
     assert se_stock.set_index("sku_code").loc["SEASONAL-1", "free_stock"] == 11
     assert se_stock.set_index("sku_code").loc["OUTLIER-1", "free_stock"] == 0
+    assert not bool(se_stock["stock_unknown"].any())
+    assert bool(iek_stock.set_index("sku_code").loc["OUTLIER-1", "stock_unknown"])
     assert ("OUTLIER-1", "SE") in tables["current_stock"].attrs["estimated_keys"]
     assert set(tables["sku_ref"]["unit"]) == {"шт"}
     assert tables["sku_ref"]["article"].str.startswith("A-").all()

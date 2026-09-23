@@ -69,6 +69,11 @@ def add_explanations(
             )
         if bool(item["stock_estimated"]):
             text += " Остаток оценён: начало месяца минус продажи; приходы за месяц неизвестны."
+        if bool(item["stock_unknown"]):
+            text += (
+                " В сентябре были приходы, остаток в данных неизвестен — "
+                "сверьте с 1С перед заказом."
+            )
         explanations.append(text)
     frame["explanation"] = explanations
     return frame

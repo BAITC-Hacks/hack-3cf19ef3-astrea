@@ -106,7 +106,11 @@ def _build_current_stock(
     use_snapshot = result["supplier"].eq("SE") & result["snapshot_stock"].notna()
     result.loc[use_snapshot, "free_stock"] = result.loc[use_snapshot, "snapshot_stock"]
     result["free_stock"] = result["free_stock"].astype(float)
-    final = result[["sku_code", "supplier", "free_stock"]].copy()
+    result["stock_unknown"] = (
+        result["supplier"].eq("IEK")
+        & result["month_sales"].fillna(0.0).gt(result["opening_stock"].fillna(0.0))
+    )
+    final = result[["sku_code", "supplier", "free_stock", "stock_unknown"]].copy()
     final.attrs["estimated_keys"] = list(
         result.loc[~use_snapshot, ["sku_code", "supplier"]].itertuples(index=False, name=None)
     )

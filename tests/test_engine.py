@@ -98,6 +98,7 @@ def make_data() -> dict[str, pd.DataFrame]:
     sku_ref["unit"] = "шт"
     current_stock = keys.copy()
     current_stock["free_stock"] = 0.0
+    current_stock["stock_unknown"] = False
     in_transit = keys.copy()
     in_transit["qty"] = 0.0
     moq = keys.copy()
@@ -109,7 +110,9 @@ def make_data() -> dict[str, pd.DataFrame]:
         "stock_monthly": pd.DataFrame(stock_rows)[
             ["sku_code", "supplier", "month", "opening_stock"]
         ],
-        "current_stock": current_stock[["sku_code", "supplier", "free_stock"]],
+        "current_stock": current_stock[
+            ["sku_code", "supplier", "free_stock", "stock_unknown"]
+        ],
         "in_transit": in_transit[["sku_code", "supplier", "qty"]],
         "moq": moq[["sku_code", "supplier", "moq"]],
         "sku_ref": sku_ref[["sku_code", "supplier", "name", "article", "unit"]],
@@ -203,6 +206,25 @@ def test_sparse_outlier_uses_cleaned_monthly_maximum() -> None:
 
     assert sparse_order["recommended_qty"] == 8
     assert sparse_order["max_level"] == 8
+
+
+def test_unknown_stock_changes_warning_not_order_quantity() -> None:
+    known_data = make_data()
+    unknown_data = deepcopy(known_data)
+    unknown_data["current_stock"].loc[
+        unknown_data["current_stock"]["sku_code"].eq("OUTLIER-1"),
+        "stock_unknown",
+    ] = True
+
+    known_orders, _ = build_recommendations(known_data)
+    unknown_orders, _ = build_recommendations(unknown_data)
+    known = known_orders.set_index("sku_code").loc["OUTLIER-1"]
+    unknown = unknown_orders.set_index("sku_code").loc["OUTLIER-1"]
+
+    assert unknown["recommended_qty"] == known["recommended_qty"]
+    assert bool(unknown["stock_unknown"])
+    assert unknown["urgency"] == "проверить остаток"
+    assert "сверьте с 1С перед заказом" in unknown["explanation"]
 
 
 def test_r5_every_order_has_explanation_and_supplier_grouping_is_lossless() -> None:

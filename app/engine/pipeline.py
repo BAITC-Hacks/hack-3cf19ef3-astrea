@@ -80,6 +80,7 @@ def build_recommendations(
         "supplier",
         "segment",
         "recommended_qty",
+        "stock_unknown",
         "urgency",
         "explanation",
     ]

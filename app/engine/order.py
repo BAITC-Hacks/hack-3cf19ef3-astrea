@@ -50,6 +50,7 @@ def calculate_orders(
     )
     base = base.merge(moq, on=KEYS, how="left")
     base["free_stock"] = base["free_stock"].fillna(0.0).astype(float)
+    base["stock_unknown"] = base["stock_unknown"].fillna(False).astype(bool)
     base["in_transit"] = base["in_transit"].fillna(0.0).astype(float)
     base["moq"] = base["moq"].fillna(1).astype(int)
 
@@ -61,6 +62,7 @@ def calculate_orders(
         window_days = lead_time + int(config.coverage_days)
         stock = float(item["free_stock"])
         transit = float(item["in_transit"])
+        stock_unknown = bool(item["stock_unknown"])
 
         if item["segment"] == "regular":
             days = pd.date_range(as_of, periods=window_days, freq="D")
@@ -102,14 +104,23 @@ def calculate_orders(
                 "demand_window": float(demand_window),
                 "safety_stock": safety_stock,
                 "free_stock": stock,
+                "stock_unknown": stock_unknown,
                 "stock_estimated": (item["sku_code"], supplier) in estimated_stock_keys
                 or supplier == "IEK",
                 "in_transit": transit,
                 "raw_need": float(need),
                 "moq": int(item["moq"]),
                 "recommended_qty": recommended_qty,
-                "urgency": _urgency(
-                    stock, transit, current_forecast, lead_time, int(config.coverage_days)
+                "urgency": (
+                    "проверить остаток"
+                    if stock_unknown
+                    else _urgency(
+                        stock,
+                        transit,
+                        current_forecast,
+                        lead_time,
+                        int(config.coverage_days),
+                    )
                 ),
             }
         )
