@@ -6,6 +6,7 @@ import streamlit as st
 from app.datasets import DatasetContext, load_dataset_context
 from app.engine.backtest import run_backtest
 from app.ui.loading_view import LoadingView, render_loading_error
+from app.ui.memo import process_cache
 
 
 METHODS = (
@@ -39,7 +40,7 @@ METRIC_COLUMNS = {
 }
 
 
-@st.cache_data(show_spinner=False)
+@process_cache(maxsize=4)
 def calculate_accuracy(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],

@@ -13,6 +13,7 @@ from app.datasets import DatasetContext
 from app.engine.ml import build_training_frame, feature_importance, train_model
 from app.engine.pipeline import build_recommendations, prepare_forecasts
 from app.ui.loading_view import LoadingView
+from app.ui.memo import process_cache
 
 
 SUPPLIER_OPTIONS = ("Оба", "IEK", "SE")
@@ -86,7 +87,7 @@ class AppControls:
         }
 
 
-@st.cache_data(show_spinner=False)
+@process_cache(maxsize=4)
 def load_data(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
@@ -98,7 +99,7 @@ def load_data(
     return load_with_disk_cache(context, CACHE_DIR, _on_progress)
 
 
-@st.cache_resource(show_spinner=False)
+@process_cache(maxsize=2, copy_result=False)
 def train_ml_resource(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],
@@ -118,7 +119,7 @@ def train_ml_resource(
     return model, importance
 
 
-@st.cache_data(show_spinner=False)
+@process_cache(maxsize=16)
 def calculate(
     path_items: tuple[tuple[str, str, str], ...],
     dataset_key: tuple[object, object],

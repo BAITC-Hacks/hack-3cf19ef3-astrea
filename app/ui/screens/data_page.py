@@ -15,6 +15,7 @@ from app.datasets import (
 from app.db import list_datasets, set_current_dataset
 from app.ui.settings_view import load_data
 from app.ui.loading_view import LoadingView, render_loading_error
+from app.ui.memo import clear_all_caches
 
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/app/uploads"))
@@ -52,7 +53,7 @@ def _invalidate_calculation() -> None:
         "calculation_dataset_key",
     ):
         st.session_state.pop(key, None)
-    st.cache_data.clear()
+    clear_all_caches()
 
 
 def _render_cards(context: object, data: dict[str, pd.DataFrame]) -> None:

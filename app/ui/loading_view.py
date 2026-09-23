@@ -3,6 +3,7 @@
 from html import escape
 
 import streamlit as st
+from app.ui.memo import clear_all_caches
 
 
 STARS = (
@@ -131,7 +132,7 @@ def render_loading_error(message: object, key: str) -> None:
     with st.container(key=f"loading_error_{key}", border=True):
         st.error(str(message).splitlines()[0])
         if st.button("Повторить", key=f"retry_{key}", type="primary"):
-            st.cache_data.clear()
+            clear_all_caches()
             st.rerun()
 
 
