@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sys
+from time import perf_counter
 from typing import Dict
 
 import pandas as pd
@@ -13,6 +14,13 @@ if str(ROOT) not in sys.path:
 
 from app.engine.forecast import forecast_months  # noqa: E402
 from app.engine.metrics import mdape, wape  # noqa: E402
+from app.engine.ml import (  # noqa: E402
+    build_prediction_frame,
+    build_training_frame,
+    feature_importance,
+    predict,
+    train_model,
+)
 from app.engine.pipeline import prepare_forecasts  # noqa: E402
 from app.loaders import load_all  # noqa: E402
 
@@ -81,13 +89,16 @@ def _average_monthly_sales_12(
 def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
     """Summarize accuracy and partner-instability diagnostics at SKU level."""
 
-    by_sku = group.groupby(KEYS, as_index=False).agg(
+    aggregations = dict(
         actual=("actual", "sum"),
         our_forecast=("our_forecast", "sum"),
         partner_forecast=("partner_forecast", "sum"),
         partner_monthly_forecast=("partner_forecast", "first"),
         average_monthly_12=("average_monthly_12", "first"),
     )
+    if "ml_forecast" in group:
+        aggregations["ml_forecast"] = ("ml_forecast", "sum")
+    by_sku = group.groupby(KEYS, as_index=False).agg(**aggregations)
     partner_error = (by_sku["actual"] - by_sku["partner_forecast"]).abs()
     partner_outlier = by_sku["partner_monthly_forecast"].gt(
         10 * by_sku["average_monthly_12"]
@@ -99,7 +110,7 @@ def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
         else float("nan")
     )
 
-    return {
+    metrics = {
         "supplier": str(group["supplier"].iloc[0]),
         "sku_count": int(len(by_sku)),
         "our_wape": wape(by_sku["actual"].to_numpy(), by_sku["our_forecast"].to_numpy()),
@@ -115,6 +126,14 @@ def _supplier_metrics(group: pd.DataFrame) -> Dict[str, object]:
         "partner_outlier_sku_count": int(partner_outlier.sum()),
         "partner_outlier_error_share": outlier_error_share,
     }
+    if "ml_forecast" in by_sku:
+        metrics["ml_wape"] = wape(
+            by_sku["actual"].to_numpy(), by_sku["ml_forecast"].to_numpy()
+        )
+        metrics["ml_mdape"] = mdape(
+            by_sku["actual"].to_numpy(), by_sku["ml_forecast"].to_numpy()
+        )
+    return metrics
 
 
 def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -133,12 +152,26 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
     eligible = eligible.loc[eligible["active_months"].ge(9), KEYS]
 
-    profiles, _, _, _ = prepare_forecasts(data, TRAIN_END)
+    profiles, segments, _, stockouts = prepare_forecasts(data, TRAIN_END)
     profiles = profiles.merge(eligible, on=KEYS, how="inner")
     ours = forecast_months(profiles, TARGET_MONTHS).rename(
         columns={"forecast": "our_forecast"}
     )
     partner = _partner_forecasts(monthly, eligible)
+    training = build_training_frame(
+        stockouts.monthly, segments, data["sku_ref"], TRAIN_END
+    )
+    training_started = perf_counter()
+    model = train_model(training)
+    training_seconds = perf_counter() - training_started
+    ml_frame = build_prediction_frame(
+        stockouts.monthly,
+        segments,
+        data["sku_ref"],
+        TRAIN_END,
+        range(1, 3),
+    )
+    ml = predict(model, ml_frame)
     average_12 = _average_monthly_sales_12(monthly, eligible)
 
     actual = monthly.loc[monthly["period"].isin(TARGET_MONTHS), [*KEYS, "month", "qty"]]
@@ -148,30 +181,48 @@ def run_backtest(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     comparison = actual.merge(ours, on=[*KEYS, "month"], how="inner").merge(
         partner, on=[*KEYS, "month"], how="inner"
     )
+    comparison = comparison.merge(ml, on=[*KEYS, "month"], how="inner")
     comparison = comparison.merge(average_12, on=KEYS, how="left")
 
     rows = []
     for supplier in ("IEK", "SE"):
         group = comparison.loc[comparison["supplier"].eq(supplier)]
         rows.append(_supplier_metrics(group))
-    return pd.DataFrame(rows)
+    results = pd.DataFrame(rows)
+    results.attrs["ml_training_rows"] = len(training)
+    results.attrs["ml_training_seconds"] = training_seconds
+    results.attrs["feature_importance"] = feature_importance(model, training)
+    return results
 
 
 def main() -> None:
     results = run_backtest(load_all(ROOT / "data" / "raw"))
+    print(
+        f"ML training: rows={results.attrs['ml_training_rows']}, "
+        f"seconds={results.attrs['ml_training_seconds']:.2f}"
+    )
     for row in results.itertuples(index=False):
+        print(f"{row.supplier}: SKU={row.sku_count}")
         print(
-            f"{row.supplier}: our WAPE={row.our_wape:.4f} ({row.our_wape:.2%}), "
-            f"MdAPE={row.our_mdape:.4f} ({row.our_mdape:.2%}); "
-            f"partner WAPE={row.partner_wape:.4f} ({row.partner_wape:.2%}), "
-            f"MdAPE={row.partner_mdape:.4f} ({row.partner_mdape:.2%}); "
-            f"SKU={row.sku_count}"
+            f"  Formula: WAPE={row.our_wape:.4f} ({row.our_wape:.2%}), "
+            f"MdAPE={row.our_mdape:.4f} ({row.our_mdape:.2%})"
+        )
+        print(
+            f"  ML: WAPE={row.ml_wape:.4f} ({row.ml_wape:.2%}), "
+            f"MdAPE={row.ml_mdape:.4f} ({row.ml_mdape:.2%})"
+        )
+        print(
+            f"  Partner: WAPE={row.partner_wape:.4f} ({row.partner_wape:.2%}), "
+            f"MdAPE={row.partner_mdape:.4f} ({row.partner_mdape:.2%})"
         )
         print(
             "  Partner outliers (>10× 12-month average): "
             f"{row.partner_outlier_sku_count} SKU, "
             f"{row.partner_outlier_error_share:.2%} of partner absolute error"
         )
+    print("ML feature importance (top 10):")
+    for item in results.attrs["feature_importance"].itertuples(index=False):
+        print(f"  {item.feature}: {item.importance:.6f}")
 
 
 if __name__ == "__main__":
