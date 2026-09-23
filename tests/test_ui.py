@@ -3,6 +3,7 @@ import pandas as pd
 from app.ui.streamlit_app import (
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
+    FORECAST_OPTIONS,
     _category_label,
     _display_importance,
     _filter_rows,
@@ -82,6 +83,13 @@ def test_category_labels_explain_se_category_codes() -> None:
     assert _category_label("1") == "SE, категория 1"
     assert _category_label(5) == "SE, категория 5"
     assert _category_label("без категории") == "без категории"
+
+
+def test_forecast_options_mark_default_and_experimental_methods() -> None:
+    assert FORECAST_OPTIONS == {
+        "Формула (по умолчанию)": "formula",
+        "ML (экспериментально)": "ml",
+    }
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:

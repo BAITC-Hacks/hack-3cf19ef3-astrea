@@ -14,7 +14,6 @@ if str(ROOT) not in sys.path:
 
 from app.config import (  # noqa: E402
     COVERAGE_DAYS,
-    DEFAULT_FORECAST_METHODS,
     LEAD_TIME_DAYS,
     EngineConfig,
 )
@@ -64,9 +63,8 @@ REVIEW_COLUMN_CONFIG = {
 }
 URGENCY_ORDER = {"высокая": 0, "средняя": 1, "низкая": 2}
 FORECAST_OPTIONS = {
-    "По умолчанию (формула)": "default",
-    "Формула": "formula",
-    "ML": "ml",
+    "Формула (по умолчанию)": "formula",
+    "ML (экспериментально)": "ml",
 }
 FEATURE_LABELS = {
     "demand_lag_0": "Продажи в последнем месяце",
@@ -133,10 +131,7 @@ def calculate(
         },
     }
     data = load_data(data_dir)
-    if forecast_choice == "formula" or (
-        forecast_choice == "default"
-        and set(DEFAULT_FORECAST_METHODS.values()) == {"formula"}
-    ):
+    if forecast_choice == "formula":
         return build_recommendations(
             data, EngineConfig(**config_values, forecast_method="formula")
         )
@@ -147,27 +142,7 @@ def calculate(
         EngineConfig(**config_values, forecast_method="ml"),
         ml_model=model,
     )
-    if forecast_choice == "ml":
-        return ml_result
-
-    formula_orders, review_needed = build_recommendations(
-        data, EngineConfig(**config_values, forecast_method="formula")
-    )
-    ml_orders, _ = ml_result
-    orders = pd.concat(
-        [
-            ml_orders.loc[
-                ml_orders["supplier"].map(DEFAULT_FORECAST_METHODS).eq("ml")
-            ],
-            formula_orders.loc[
-                formula_orders["supplier"]
-                .map(DEFAULT_FORECAST_METHODS)
-                .eq("formula")
-            ],
-        ],
-        ignore_index=True,
-    )
-    return orders, review_needed
+    return ml_result
 
 
 def _filter_rows(
@@ -318,6 +293,11 @@ def main() -> None:
         supplier_choice = st.selectbox("Поставщик", SUPPLIER_OPTIONS)
         forecast_label = st.selectbox("Метод прогноза", list(FORECAST_OPTIONS))
         forecast_choice = FORECAST_OPTIONS[forecast_label]
+        st.caption(
+            "Бэктест июль–август 2026: формула — WAPE 39,11% (IEK) и "
+            "25,25% (SE), MdAPE 58,08% и 48,90%; ML — WAPE 34,53% и "
+            "31,45%, MdAPE 44,51% и 36,33%."
+        )
         category_choice = "Все"
         if supplier_choice != "IEK":
             category_source = data["sku_ref"]
