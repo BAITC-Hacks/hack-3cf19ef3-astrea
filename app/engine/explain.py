@@ -67,6 +67,9 @@ def add_explanations(
                 f"= {_number(item['raw_need'])} → кратность {item['moq']} → "
                 f"{item['recommended_qty']} шт."
             )
+        planned_growth = float(item["planned_growth"])
+        if planned_growth != 0:
+            text += f" Плановый прирост {planned_growth:+.0%} применён к прогнозу."
         if bool(item["stock_estimated"]):
             text += " Остаток оценён: начало месяца минус продажи; приходы за месяц неизвестны."
         if bool(item["stock_unknown"]):

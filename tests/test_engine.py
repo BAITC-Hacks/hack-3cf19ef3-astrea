@@ -136,6 +136,20 @@ def test_r1_less_in_transit_increases_order_quantity() -> None:
     assert baseline_qty - transit_qty == 20
 
 
+def test_r1_planned_growth_increases_order_quantity() -> None:
+    data = make_data()
+    baseline_orders, _ = build_recommendations(data)
+    growth_orders, _ = build_recommendations(
+        data,
+        EngineConfig(planned_growth={"IEK": 0.10, "SE": 0.0}),
+    )
+    baseline = baseline_orders.set_index("sku_code").loc["OUTLIER-1"]
+    with_growth = growth_orders.set_index("sku_code").loc["OUTLIER-1"]
+
+    assert with_growth["recommended_qty"] > baseline["recommended_qty"]
+    assert "Плановый прирост +10%" in with_growth["explanation"]
+
+
 def test_r2_seasonal_peak_forecast_exceeds_simple_average() -> None:
     data = make_data()
     last_full = pd.Period("2026-05", freq="M")

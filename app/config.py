@@ -9,6 +9,7 @@ import pandas as pd
 LEAD_TIME_DAYS = {"IEK": 24, "SE": 35}
 COVERAGE_DAYS = 30
 SERVICE_Z = 1.65
+PLANNED_GROWTH = {"IEK": 0.0, "SE": 0.0}
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,9 @@ class EngineConfig:
     )
     coverage_days: int = COVERAGE_DAYS
     service_z: float = SERVICE_Z
+    planned_growth: Mapping[str, float] = field(
+        default_factory=lambda: dict(PLANNED_GROWTH)
+    )
 
 
 def resolve_as_of(sales_tx: pd.DataFrame, config: EngineConfig) -> pd.Timestamp:

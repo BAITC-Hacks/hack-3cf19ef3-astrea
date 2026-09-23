@@ -59,6 +59,8 @@ def calculate_orders(
     for _, item in base.iterrows():
         supplier = str(item["supplier"])
         lead_time = int(config.lead_time_days[supplier])
+        planned_growth = float(config.planned_growth.get(supplier, 0.0))
+        forecast_multiplier = max(1.0 + planned_growth, 0.0)
         window_days = lead_time + int(config.coverage_days)
         stock = float(item["free_stock"])
         transit = float(item["in_transit"])
@@ -68,19 +70,21 @@ def calculate_orders(
             days = pd.date_range(as_of, periods=window_days, freq="D")
             demand_window = sum(
                 forecast_value(item, day.to_period("M")) / day.days_in_month for day in days
-            )
+            ) * forecast_multiplier
             safety_stock = float(
                 config.service_z * float(item["sigma"]) * math.sqrt(lead_time / 30.0)
             )
-            current_forecast = forecast_value(item, as_of.to_period("M"))
+            current_forecast = (
+                forecast_value(item, as_of.to_period("M")) * forecast_multiplier
+            )
             current_season = float(item[f"season_{as_of.month}"])
             level = float(item["level"])
             growth = float(item["growth"])
             sigma = float(item["sigma"])
         else:
-            demand_window = float(item["max_level"])
+            demand_window = float(item["max_level"]) * forecast_multiplier
             safety_stock = 0.0
-            current_forecast = float(item["max_level"])
+            current_forecast = float(item["max_level"]) * forecast_multiplier
             current_season = np.nan
             level = np.nan
             growth = np.nan
@@ -100,6 +104,7 @@ def calculate_orders(
                 "sigma": sigma,
                 "seasonal_index": current_season,
                 "forecast_monthly": current_forecast,
+                "planned_growth": planned_growth,
                 "window_days": window_days,
                 "demand_window": float(demand_window),
                 "safety_stock": safety_stock,
