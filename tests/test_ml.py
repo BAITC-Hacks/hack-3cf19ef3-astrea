@@ -143,9 +143,10 @@ def test_model_produces_finite_non_negative_forecasts() -> None:
 
 def test_ml_recommendations_include_both_forecasts() -> None:
     orders, _ = build_recommendations(
-        _pipeline_data(), EngineConfig(forecast_method="ml")
+        _pipeline_data(), EngineConfig(forecast_method="ml", coverage_days=200)
     )
 
     assert not orders.empty
     assert orders["explanation"].str.contains("ML-прогноз").all()
     assert orders["explanation"].str.contains("формула").all()
+    assert orders["explanation"].str.contains("за горизонтом ML 6 мес.").all()
