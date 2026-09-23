@@ -12,6 +12,7 @@ pytestmark = pytest.mark.skipif(
 if DATABASE_URL:
     import psycopg
 
+    from app.auth import RegistrationError, authenticate, register
     from app.db import ensure_schema, get_order_lines, list_orders, save_order
 
 
@@ -86,3 +87,63 @@ def test_line_failure_rolls_back_order_header() -> None:
 
     orders = list_orders(DATABASE_URL)
     assert not orders["approved_by"].eq(approved_by).any()
+
+
+def test_register_authenticate_and_reject_duplicate_email(monkeypatch) -> None:
+    ensure_schema(DATABASE_URL)
+    monkeypatch.setenv("INVITE_CODE", "pytest-invite")
+    email = f"pytest-{uuid4()}@example.com"
+    try:
+        user = register(
+            email.upper(),
+            "Тестовый пользователь",
+            "correct-password",
+            "pytest-invite",
+            DATABASE_URL,
+        )
+
+        assert user["email"] == email
+        assert authenticate(email, "wrong-password", DATABASE_URL) is None
+        assert authenticate(email, "correct-password", DATABASE_URL) == user
+        with pytest.raises(RegistrationError, match="Такой email уже есть"):
+            register(
+                email,
+                "Другой пользователь",
+                "correct-password",
+                "pytest-invite",
+                DATABASE_URL,
+            )
+    finally:
+        with psycopg.connect(DATABASE_URL) as connection:
+            connection.execute("DELETE FROM users WHERE email = %s", (email,))
+
+
+def test_order_records_current_user_id(monkeypatch) -> None:
+    ensure_schema(DATABASE_URL)
+    monkeypatch.setenv("INVITE_CODE", "pytest-invite")
+    email = f"pytest-order-{uuid4()}@example.com"
+    user = register(
+        email,
+        "Утверждающий",
+        "correct-password",
+        "pytest-invite",
+        DATABASE_URL,
+    )
+    order_id = save_order(
+        "IEK",
+        str(user["full_name"]),
+        "2026-09-22",
+        "formula",
+        {},
+        _lines(),
+        DATABASE_URL,
+        approved_by_user_id=int(user["id"]),
+    )
+    try:
+        order = list_orders(DATABASE_URL).set_index("id").loc[order_id]
+        assert order["approved_by"] == user["full_name"]
+        assert order["approved_by_user_id"] == user["id"]
+    finally:
+        with psycopg.connect(DATABASE_URL) as connection:
+            connection.execute("DELETE FROM purchase_orders WHERE id = %s", (order_id,))
+            connection.execute("DELETE FROM users WHERE id = %s", (user["id"],))

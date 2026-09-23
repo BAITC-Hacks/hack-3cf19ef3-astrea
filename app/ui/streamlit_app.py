@@ -38,6 +38,7 @@ from app.orders import (  # noqa: E402
     default_edits,
     order_totals,
 )
+from app.ui.auth_view import render_auth_screen  # noqa: E402
 
 
 DATA_DIR = ROOT / "data" / "raw"
@@ -347,25 +348,18 @@ def _show_grouped(
         )
 
 
-def _approval_controls(
-    supplier: str, database_ready: bool
-) -> tuple[str, bool]:
+def _approval_controls(supplier: str, database_ready: bool) -> bool:
     """Render approval controls, disabled when PostgreSQL is unavailable."""
 
     if not database_ready:
         st.info(DATABASE_DISABLED_MESSAGE)
-    approved_by = st.text_input(
-        "Кто утверждает",
-        key=f"approved_by_{supplier}",
-        disabled=not database_ready,
-    )
     pressed = st.button(
         f"Утвердить заказ {supplier}",
         key=f"approve_order_{supplier}",
         type="primary",
         disabled=not database_ready,
     )
-    return approved_by, pressed
+    return pressed
 
 
 def _editor_view(lines: pd.DataFrame) -> pd.DataFrame:
@@ -435,6 +429,7 @@ def _show_order_editor(
     data_as_of: object,
     forecast_method: str,
     params: dict[str, object],
+    current_user: dict[str, object],
 ) -> pd.DataFrame:
     """Render one supplier editor and optionally persist its approved order."""
 
@@ -508,23 +503,22 @@ def _show_order_editor(
                 hide_index=True,
             )
 
-    approved_by, approve_pressed = _approval_controls(supplier, database_ready)
+    approve_pressed = _approval_controls(supplier, database_ready)
     approved_lines = approvable_lines(corrected)
     if approve_pressed:
-        if not approved_by.strip():
-            st.error("Укажите, кто утверждает заказ.")
-        elif approved_lines.empty:
+        if approved_lines.empty:
             st.error("В заказе нет строк для утверждения.")
         else:
             try:
                 order_id = save_order(
                     supplier,
-                    approved_by,
+                    str(current_user["full_name"]),
                     data_as_of,
                     forecast_method,
                     params,
                     approved_lines,
                     connection_url,
+                    approved_by_user_id=int(current_user["id"]),
                 )
             except Exception as error:
                 st.error(f"Не удалось сохранить заказ: {error}")
@@ -649,13 +643,22 @@ def _show_order_history(database_ready: bool, connection_url: str) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="Автозаказ", page_icon="📦", layout="wide")
-    st.title("Автозаказ поставщикам")
-    st.caption("Расчёт выполняется локально. Заказ поставщику не отправляется.")
-
     connection_url = database_url() or ""
     database_ready, database_error = initialize_database(connection_url)
     if not database_ready:
-        st.caption(f"Режим без базы: {database_error}.")
+        st.title("Astrea AI")
+        st.error("Сервис временно недоступен")
+        return
+
+    current_user = st.session_state.get("current_user")
+    if current_user is None:
+        current_user = render_auth_screen(connection_url)
+        if current_user is None:
+            return
+        st.session_state["current_user"] = current_user
+        st.rerun()
+
+    st.title("Автозаказ поставщикам")
 
     try:
         data = load_data(str(DATA_DIR))
@@ -816,6 +819,7 @@ def main() -> None:
                         as_of,
                         forecast_choice,
                         approval_params,
+                        current_user,
                     )
                 )
         corrected_orders = (

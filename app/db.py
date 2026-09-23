@@ -7,11 +7,12 @@ from typing import Mapping, Optional, Tuple
 import pandas as pd
 
 
-MIGRATION_PATH = Path(__file__).resolve().parents[1] / "db" / "migrations" / "001_orders.sql"
+MIGRATION_DIR = Path(__file__).resolve().parents[1] / "db" / "migrations"
 ORDER_COLUMNS = [
     "id",
     "supplier",
     "approved_by",
+    "approved_by_user_id",
     "approved_at",
     "data_as_of",
     "forecast_method",
@@ -62,14 +63,14 @@ def _driver() -> Tuple[object, object, object]:
 
 
 def ensure_schema(connection_url: Optional[str] = None) -> bool:
-    """Apply the idempotent order migration when PostgreSQL is configured."""
+    """Apply all idempotent migrations when PostgreSQL is configured."""
 
     if connection_url is None and database_url() is None:
         return False
     psycopg, _, _ = _driver()
-    migration = MIGRATION_PATH.read_text(encoding="utf-8")
     with psycopg.connect(_resolve_url(connection_url)) as connection:
-        connection.execute(migration)
+        for migration_path in sorted(MIGRATION_DIR.glob("*.sql")):
+            connection.execute(migration_path.read_text(encoding="utf-8"))
     return True
 
 
@@ -125,6 +126,7 @@ def save_order(
     params: Mapping[str, object],
     lines: pd.DataFrame,
     connection_url: Optional[str] = None,
+    approved_by_user_id: Optional[int] = None,
 ) -> int:
     """Save an order header and all lines atomically, returning its ID."""
 
@@ -144,8 +146,8 @@ def save_order(
                 """
                 INSERT INTO purchase_orders (
                     supplier, approved_by, data_as_of, forecast_method,
-                    params, line_count, total_qty
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    params, line_count, total_qty, approved_by_user_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -156,6 +158,7 @@ def save_order(
                     Jsonb(dict(params)),
                     len(records),
                     sum(int(record[7]) for record in records),
+                    approved_by_user_id,
                 ),
             )
             order_id = int(cursor.fetchone()[0])
@@ -182,7 +185,7 @@ def list_orders(connection_url: Optional[str] = None) -> pd.DataFrame:
     with psycopg.connect(_resolve_url(connection_url), row_factory=dict_row) as connection:
         rows = connection.execute(
             """
-            SELECT id, supplier, approved_by, approved_at, data_as_of,
+            SELECT id, supplier, approved_by, approved_by_user_id, approved_at, data_as_of,
                    forecast_method, params, line_count, total_qty
             FROM purchase_orders
             ORDER BY approved_at DESC, id DESC

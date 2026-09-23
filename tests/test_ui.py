@@ -155,7 +155,6 @@ _approval_controls("IEK", False)
 
     assert not app.exception
     assert app.button[0].disabled
-    assert app.text_input[0].disabled
     assert "утверждение и история отключены" in app.info[0].value
 
 
@@ -185,3 +184,24 @@ def test_editor_draft_restores_changed_quantities() -> None:
 
     assert restored.loc[0, "approved_qty"] == 18
     assert changes == drafts
+
+
+def test_unauthenticated_page_does_not_load_partner_data() -> None:
+    app = AppTest.from_string(
+        """
+import app.ui.streamlit_app as application
+
+application.database_url = lambda: "postgresql://configured"
+application.initialize_database = lambda connection_url: (True, "")
+application.render_auth_screen = lambda connection_url: None
+
+def forbidden_load(data_dir):
+    raise AssertionError("load_data must not run before login")
+
+application.load_data = forbidden_load
+application.main()
+"""
+    ).run(timeout=10)
+
+    assert not app.exception
+    assert not app.dataframe

@@ -20,6 +20,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://autozakaz:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/autozakaz
+      INVITE_CODE: ${INVITE_CODE:-}
     depends_on:
       db:
         condition: service_healthy
