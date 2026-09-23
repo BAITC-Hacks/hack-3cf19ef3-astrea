@@ -253,6 +253,13 @@ def main() -> None:
     with recommendations_tab:
         _show_grouped(visible_orders, ORDER_COLUMNS)
         workbook = export_xlsx(visible_orders)
+        stock_review_count = int(
+            visible_orders["stock_unknown"].fillna(False).astype(bool).sum()
+        )
+        st.caption(
+            f"На отдельный лист «Проверить остаток» ушло позиций: "
+            f"{stock_review_count}."
+        )
         st.download_button(
             "Скачать xlsx для 1С",
             data=workbook,

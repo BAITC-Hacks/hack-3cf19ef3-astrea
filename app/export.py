@@ -26,6 +26,10 @@ EXPLANATION_COLUMNS = {
     "urgency": "Срочность",
     "explanation": "Обоснование",
 }
+STOCK_REVIEW_COLUMNS = {
+    **ORDER_COLUMNS,
+    "explanation": "Обоснование",
+}
 
 
 def _select_and_rename(frame: pd.DataFrame, columns: dict[str, str]) -> pd.DataFrame:
@@ -47,12 +51,21 @@ def export_xlsx(
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        stock_unknown = recommendations["stock_unknown"].fillna(False).astype(bool)
+        importable = recommendations.loc[~stock_unknown]
         for supplier in supplier_names:
-            supplier_rows = recommendations.loc[
-                recommendations["supplier"].eq(supplier)
+            supplier_rows = importable.loc[
+                importable["supplier"].eq(supplier)
             ]
             order_sheet = _select_and_rename(supplier_rows, ORDER_COLUMNS)
             order_sheet.to_excel(writer, sheet_name=supplier[:31], index=False)
+
+        stock_review_sheet = _select_and_rename(
+            recommendations.loc[stock_unknown], STOCK_REVIEW_COLUMNS
+        )
+        stock_review_sheet.to_excel(
+            writer, sheet_name="Проверить остаток", index=False
+        )
 
         explanation_sheet = _select_and_rename(
             recommendations, EXPLANATION_COLUMNS
