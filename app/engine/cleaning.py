@@ -8,6 +8,7 @@ import pandas as pd
 
 KEYS = ["sku_code", "supplier"]
 ROBUST_SCALE = 1.4826
+MIN_COVERAGE_ROWS = 1000
 
 
 @dataclass
@@ -67,18 +68,18 @@ def clean_sales(
         lower=0.0
     )
 
-    first_transaction = (
-        transactions.groupby(KEYS, as_index=False)["period"]
-        .min()
-        .rename(columns={"period": "first_tx_period"})
-    )
-    monthly = monthly.merge(first_transaction, on=KEYS, how="left")
+    monthly_counts = transactions.groupby(["supplier", "period"]).size()
+    qualifying = monthly_counts.loc[monthly_counts.ge(MIN_COVERAGE_ROWS)].reset_index()
+    coverage_start = transactions.groupby("supplier")["period"].min()
+    if not qualifying.empty:
+        coverage_start.update(qualifying.groupby("supplier")["period"].min())
+    monthly["coverage_start"] = monthly["supplier"].map(coverage_start)
     group_median = monthly.groupby(KEYS)["monthly_clean"].transform("median")
     deviation = (monthly["monthly_clean"] - group_median).abs()
     group_mad = deviation.groupby([monthly[column] for column in KEYS]).transform("median")
     cap = group_median + 5.0 * ROBUST_SCALE * group_mad.clip(lower=1.0)
-    before_transactions = monthly["first_tx_period"].isna() | monthly["period"].lt(
-        monthly["first_tx_period"]
+    before_transactions = monthly["coverage_start"].isna() | monthly["period"].lt(
+        monthly["coverage_start"]
     )
     monthly.loc[before_transactions, "monthly_clean"] = np.minimum(
         monthly.loc[before_transactions, "monthly_clean"], cap.loc[before_transactions]

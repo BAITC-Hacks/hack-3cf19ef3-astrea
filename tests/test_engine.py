@@ -294,6 +294,42 @@ def test_mad_floor_does_not_flag_constant_unit_sales() -> None:
     assert not flagged["is_outlier"].any()
 
 
+def test_cleaning_uses_supplier_wide_transaction_coverage_start() -> None:
+    main_transactions = pd.DataFrame(
+        {
+            "date": pd.Timestamp("2025-01-15"),
+            "sku_code": [f"SKU-{index}" for index in range(1000)],
+            "supplier": "IEK",
+            "qty": 1.0,
+        }
+    )
+    isolated_early = pd.DataFrame(
+        [
+            {
+                "date": pd.Timestamp("2024-06-15"),
+                "sku_code": "EARLY-1",
+                "supplier": "IEK",
+                "qty": 1.0,
+            }
+        ]
+    )
+    sales_tx = pd.concat([isolated_early, main_transactions], ignore_index=True)
+    sales_monthly = pd.DataFrame(
+        [
+            {"sku_code": "EARLY-1", "supplier": "IEK", "month": "2024-06", "qty": 1000.0},
+            {"sku_code": "EARLY-1", "supplier": "IEK", "month": "2025-01", "qty": 10.0},
+            {"sku_code": "EARLY-1", "supplier": "IEK", "month": "2025-02", "qty": 10.0},
+        ]
+    )
+
+    cleaned = clean_sales(
+        sales_monthly, sales_tx, pd.Period("2025-02", freq="M")
+    ).monthly
+    early_value = cleaned.loc[cleaned["month"].eq("2024-06"), "monthly_clean"].iloc[0]
+
+    assert early_value < 20.0
+
+
 def test_nan_opening_stock_is_treated_as_stockout() -> None:
     data = make_data()
     last_full = pd.Period("2026-08", freq="M")
