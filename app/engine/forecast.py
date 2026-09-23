@@ -119,7 +119,10 @@ def build_forecast_profiles(
                 for value, month in zip(history, history_months)
             ]
         )
-        level = float(deseasonalized.mean())
+        positive_months = np.flatnonzero(history > 0)
+        first_sale_index = int(positive_months[0]) if positive_months.size else 0
+        level_start = min(first_sale_index, len(history) - 4)
+        level = float(deseasonalized[level_start:].mean())
         recent = sum(float(demand_map.get(month, 0.0)) for month in recent_months)
         prior = sum(float(demand_map.get(month, 0.0)) for month in prior_year_months)
         growth = 1.0 if prior == 0 else recent / prior

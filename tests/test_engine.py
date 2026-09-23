@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.config import EngineConfig
 from app.engine.cleaning import clean_sales, detect_outliers
@@ -320,6 +321,36 @@ def test_growth_is_year_over_year_and_clipped() -> None:
     )
     seasonal = rebuilt.set_index("sku_code").loc["SEASONAL-1"]
     assert seasonal["growth"] == 1.0
+
+
+def test_new_sku_level_starts_with_first_sale_and_uses_four_months() -> None:
+    months = pd.period_range("2025-09", "2026-08", freq="M")
+    demand = pd.DataFrame(
+        {
+            "sku_code": "NEW-1",
+            "supplier": "IEK",
+            "month": months.astype(str),
+            "demand": [0.0] * 8 + [20.0] * 4,
+        }
+    )
+    segments = pd.DataFrame(
+        [
+            {
+                "sku_code": "NEW-1",
+                "supplier": "IEK",
+                "segment": "regular",
+                "active_months": 4,
+                "max_level": 20.0,
+            }
+        ]
+    )
+
+    profile = build_forecast_profiles(
+        demand, segments, pd.Period("2026-08", freq="M")
+    ).iloc[0]
+
+    assert profile["level"] == 20.0
+    assert profile["simple_average"] == pytest.approx(20.0 / 3.0)
 
 
 def test_wape() -> None:
