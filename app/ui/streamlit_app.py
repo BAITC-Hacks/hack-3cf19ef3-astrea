@@ -1,9 +1,9 @@
-"""Astrea Streamlit application assembly."""
+"""Authenticated multi-page entry point for Astrea."""
 
+from html import escape
 from pathlib import Path
 import sys
 
-import pandas as pd
 import streamlit as st
 
 
@@ -13,7 +13,6 @@ if str(ROOT) not in sys.path:
 
 from app.db import database_url  # noqa: E402
 from app.ui.auth_view import render_auth_screen  # noqa: E402
-from app.ui.history_view import render_history  # noqa: E402
 from app.ui.order_view import (  # noqa: E402
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
@@ -25,10 +24,8 @@ from app.ui.order_view import (  # noqa: E402
     _restore_draft,
     _sort_orders,
     _summary_metrics,
-    render_dead_tab,
-    render_order_tab,
-    render_summary,
 )
+from app.ui.pages import accuracy_page, data_page, history_page, order_page  # noqa: E402
 from app.ui.settings_view import (  # noqa: E402
     FORECAST_OPTIONS,
     _category_label,
@@ -37,26 +34,13 @@ from app.ui.settings_view import (  # noqa: E402
     calculate,
     initialize_database,
     load_data,
-    render_controls,
     train_ml_resource,
 )
 from app.ui.theme import apply_theme  # noqa: E402
 
 
 DATA_DIR = ROOT / "data" / "raw"
-
-
-def _brand_header(current_user: dict[str, object], as_of: object) -> None:
-    with st.container(key="brand_header"):
-        title, account = st.columns([4, 1])
-        with title:
-            st.title("Astrea")
-            st.text(f"Расчёт заказов поставщикам  |  данные на {as_of:%d.%m.%Y}")
-        with account:
-            st.text(str(current_user["full_name"]))
-            if st.button("Выйти", width="stretch"):
-                st.session_state.clear()
-                st.rerun()
+NAVIGATION_TITLES = ("Заказ", "Данные", "История", "Точность")
 
 
 def _authenticate(connection_url: str) -> dict[str, object] | None:
@@ -69,6 +53,79 @@ def _authenticate(connection_url: str) -> dict[str, object] | None:
     st.session_state["current_user"] = current_user
     st.rerun()
     return None
+
+
+def _initials(full_name: object) -> str:
+    parts = str(full_name).strip().split()
+    return "".join(part[0].upper() for part in parts[:2]) or "A"
+
+
+def _render_sidebar_brand() -> None:
+    with st.sidebar:
+        with st.container(key="sidebar_brand"):
+            st.markdown("## Astrea")
+            st.caption("Расчёт заказов поставщикам")
+
+
+def _render_sidebar_profile(current_user: dict[str, object]) -> None:
+    full_name = escape(str(current_user["full_name"]))
+    email = escape(str(current_user["email"]))
+    initials = escape(_initials(current_user["full_name"]))
+    with st.sidebar:
+        with st.container(key="sidebar_profile"):
+            st.markdown(
+                (
+                    '<div class="astrea-profile">'
+                    f'<span class="astrea-avatar">{initials}</span>'
+                    '<span class="astrea-profile-copy">'
+                    f'<strong>{full_name}</strong><small>{email}</small>'
+                    "</span></div>"
+                ),
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "Выйти",
+                key="logout",
+                icon=":material/logout:",
+                width="stretch",
+            ):
+                st.session_state.clear()
+                st.rerun()
+
+
+def _render_order_page() -> None:
+    order_page.render(DATA_DIR, load_data, calculate)
+
+
+def _navigation() -> object:
+    pages = [
+        st.Page(
+            _render_order_page,
+            title="Заказ",
+            icon=":material/shopping_cart:",
+            url_path="order",
+            default=True,
+        ),
+        st.Page(
+            data_page.render,
+            title="Данные",
+            icon=":material/database:",
+            url_path="data",
+        ),
+        st.Page(
+            history_page.render,
+            title="История",
+            icon=":material/history:",
+            url_path="history",
+        ),
+        st.Page(
+            accuracy_page.render,
+            title="Точность",
+            icon=":material/monitoring:",
+            url_path="accuracy",
+        ),
+    ]
+    return st.navigation(pages, position="sidebar", expanded=True)
 
 
 def main() -> None:
@@ -87,56 +144,33 @@ def main() -> None:
     if current_user is None:
         return
 
-    try:
-        data = load_data(str(DATA_DIR))
-    except Exception as error:
-        st.error(f"Не удалось загрузить данные: {error}")
-        return
-
-    as_of = pd.Timestamp(data["sales_tx"]["date"].max()).date()
-    _brand_header(current_user, as_of)
-    controls = render_controls(data, str(DATA_DIR))
-
-    if _needs_calculation(st.session_state, controls.recalculate):
-        st.session_state["recommendation_result"] = calculate(
-            str(DATA_DIR), *controls.calculation_key
-        )
-        st.session_state["calculation_parameters"] = controls.calculation_key
-
-    if st.session_state.get("calculation_parameters") != controls.calculation_key:
-        st.warning("Настройки изменены. Нажмите «Пересчитать»")
-
-    orders, no_sales = st.session_state["recommendation_result"]
-    visible_orders = _sort_orders(
-        _filter_rows(orders, controls.supplier, controls.category, controls.query)
-    )
-    visible_no_sales = _filter_rows(
-        no_sales, controls.supplier, controls.category, controls.query
-    )
-
-    render_summary(visible_orders)
-    order_tab, no_sales_tab, history_tab = st.tabs(
-        [
-            f"Заказ ({len(visible_orders)})",
-            f"Без продаж ({len(visible_no_sales)})",
-            "История",
-        ]
-    )
-    with order_tab:
-        render_order_tab(
-            visible_orders,
-            database_ready,
-            connection_url,
-            current_user,
-            as_of,
-            controls.forecast_method,
-            controls.approval_params,
-        )
-    with no_sales_tab:
-        render_dead_tab(visible_no_sales)
-    with history_tab:
-        render_history(connection_url)
+    st.session_state["connection_url"] = connection_url
+    _render_sidebar_brand()
+    page = _navigation()
+    _render_sidebar_profile(current_user)
+    page.run()
 
 
 if __name__ == "__main__":
     main()
+
+
+__all__ = [
+    "FORECAST_OPTIONS",
+    "NAVIGATION_TITLES",
+    "ORDER_COLUMNS",
+    "REVIEW_COLUMNS",
+    "_approval_controls",
+    "_category_label",
+    "_details_points",
+    "_display_importance",
+    "_draft_changes",
+    "_export_suppliers",
+    "_filter_rows",
+    "_initials",
+    "_needs_calculation",
+    "_restore_draft",
+    "_sort_orders",
+    "_summary_metrics",
+    "main",
+]

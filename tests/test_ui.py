@@ -2,6 +2,7 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from app.ui.streamlit_app import (
+    NAVIGATION_TITLES,
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
     FORECAST_OPTIONS,
@@ -11,11 +12,13 @@ from app.ui.streamlit_app import (
     _draft_changes,
     _export_suppliers,
     _filter_rows,
+    _initials,
     _needs_calculation,
     _restore_draft,
     _sort_orders,
     _summary_metrics,
 )
+import app.ui.streamlit_app as application
 from app.ui.settings_view import reset_filters
 
 
@@ -38,6 +41,34 @@ def test_grouped_table_columns_prioritize_decision_fields() -> None:
     assert "Причина" not in REVIEW_COLUMNS.values()
     assert "supplier" not in ORDER_COLUMNS
     assert "supplier" not in REVIEW_COLUMNS
+
+
+def test_authenticated_navigation_has_four_expected_pages(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_page(function, **kwargs):
+        return {"function": function, **kwargs}
+
+    def fake_navigation(pages, **kwargs):
+        captured["pages"] = pages
+        captured["options"] = kwargs
+        return "navigation"
+
+    monkeypatch.setattr(application.st, "Page", fake_page)
+    monkeypatch.setattr(application.st, "navigation", fake_navigation)
+
+    assert application._navigation() == "navigation"
+    assert NAVIGATION_TITLES == ("Заказ", "Данные", "История", "Точность")
+    assert [page["title"] for page in captured["pages"]] == list(
+        NAVIGATION_TITLES
+    )
+    assert captured["options"] == {"position": "sidebar", "expanded": True}
+    assert captured["pages"][0]["default"] is True
+
+
+def test_profile_initials_use_first_two_name_parts() -> None:
+    assert _initials("Павел Иванов") == "ПИ"
+    assert _initials("") == "A"
 
 
 def test_first_open_triggers_calculation() -> None:
