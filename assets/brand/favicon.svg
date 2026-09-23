@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>Astrea</title>
+  <defs>
+    <linearGradient id="astrea-fav-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1F8466"/>
+      <stop offset="1" stop-color="#10513E"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#astrea-fav-bg)"/>
+  <!-- simplified for 16–32 px: thicker legs, no small stars -->
+  <g stroke="#FFFFFF" stroke-linecap="round" fill="none">
+    <path d="M16 8.5 L8.8 25 M16 8.5 L23.2 25" stroke-width="2.2" stroke-opacity="0.8"/>
+    <path d="M11.9 18.2 L20.1 18.2" stroke-width="1.8" stroke-opacity="0.6"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="8.8" cy="25" r="2"/>
+    <circle cx="23.2" cy="25" r="2"/>
+  </g>
+  <path fill="#FFFFFF" d="M16 2.8 Q16.8 7.7 21.7 8.5 Q16.8 9.3 16 14.2 Q15.2 9.3 10.3 8.5 Q15.2 7.7 16 2.8 Z"/>
+</svg>

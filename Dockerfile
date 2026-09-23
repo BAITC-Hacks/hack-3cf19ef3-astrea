@@ -15,6 +15,7 @@ RUN python scripts/build_cache.py
 COPY db ./db
 COPY tests ./tests
 COPY .streamlit ./.streamlit
+COPY assets ./assets
 COPY pytest.ini ./pytest.ini
 
 RUN useradd -m app \

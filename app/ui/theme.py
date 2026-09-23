@@ -139,6 +139,16 @@ h2, h3 {
   border-right: 1px solid var(--astrea-border);
 }
 
+[data-testid="stSidebarLogo"] {
+  height: 2.6rem;
+  max-width: 100%;
+}
+
+[data-testid="stSidebarHeader"] {
+  padding-top: 1.25rem;
+  padding-bottom: 0.5rem;
+}
+
 [data-testid="stSidebarContent"] {
   position: relative;
   min-height: 100vh;

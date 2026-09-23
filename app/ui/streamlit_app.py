@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 from app.db import database_url  # noqa: E402
 from app.datasets import resolve_dataset_context  # noqa: E402
 from app.ui.auth_view import render_auth_screen  # noqa: E402
+from app.ui.brand import logo_html, page_icon, render_sidebar_logo  # noqa: E402
 from app.ui.order_view import (  # noqa: E402
     ORDER_COLUMNS,
     REVIEW_COLUMNS,
@@ -64,6 +65,8 @@ def _initials(full_name: object) -> str:
 
 
 def _render_sidebar_brand() -> None:
+    if render_sidebar_logo():
+        return
     with st.sidebar:
         with st.container(key="sidebar_brand"):
             st.markdown("## Astrea")
@@ -132,14 +135,18 @@ def _navigation() -> object:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Astrea", page_icon="A", layout="wide")
+    st.set_page_config(page_title="Astrea", page_icon=page_icon(), layout="wide")
     apply_theme()
 
     connection_url = database_url() or ""
     database_ready, _ = initialize_database(connection_url)
     if not database_ready:
         with st.container(key="auth_panel", border=True):
-            st.title("Astrea")
+            logo = logo_html(height=52)
+            if logo:
+                st.markdown(logo, unsafe_allow_html=True)
+            else:
+                st.title("Astrea")
             st.error("Сервис временно недоступен")
         return
 

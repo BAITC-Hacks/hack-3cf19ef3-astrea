@@ -6,6 +6,7 @@ from typing import Optional
 import streamlit as st
 
 from app.auth import RegistrationError, authenticate, register
+from app.ui.brand import logo_html
 
 
 MAX_LOGIN_ATTEMPTS = 5
@@ -29,7 +30,11 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
     """Render login/registration and return a newly authenticated user."""
 
     with st.container(key="auth_panel", border=True):
-        st.title("Astrea")
+        logo = logo_html(height=52)
+        if logo:
+            st.markdown(logo, unsafe_allow_html=True)
+        else:
+            st.title("Astrea")
         st.subheader("Расчёт заказов поставщикам")
         mode = st.radio(
             "Режим",
