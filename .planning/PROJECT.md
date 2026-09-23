@@ -47,7 +47,8 @@
 - Дедлайн < 1 суток → делаем только must-have (RULE.md п.7) + MOQ.
   Опциональные пункты (RULE.md п.8) не делаем.
 - Стек: Python + Streamlit, зависимости только pandas, numpy, openpyxl,
-  streamlit, pytest (requirements.txt).
+  streamlit, pytest, **scikit-learn** (одобрен человеком 2026-09-23 для
+  ML-модели-соперника, фаза 6) — requirements.txt.
 - Сегментация спроса обязательна (см. `docs/validation.md` §6): частые
   SKU — через модель; редкие — через min/max по страховому запасу;
   SKU без продаж за 12 мес. — не заказываются, помечаются для ручной
