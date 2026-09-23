@@ -24,6 +24,7 @@ ORDER_COLUMNS = {
     "sku_code": "Код 1С",
     "article": "Артикул",
     "name": "Наименование",
+    "category": "Категория",
     "supplier": "Поставщик",
     "recommended_qty": "Рекомендуемое количество",
     "urgency": "Срочность",
@@ -33,6 +34,7 @@ REVIEW_COLUMNS = {
     "sku_code": "Код 1С",
     "article": "Артикул",
     "name": "Наименование",
+    "category": "Категория",
     "supplier": "Поставщик",
     "reason": "Причина",
 }
@@ -48,23 +50,37 @@ def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
 
 @st.cache_data(show_spinner="Рассчитываем рекомендации…")
 def calculate(
-    data_dir: str, lead_time_iek: int, lead_time_se: int, coverage_days: int
+    data_dir: str,
+    lead_time_iek: int,
+    lead_time_se: int,
+    coverage_days: int,
+    planned_growth_iek_percent: float,
+    planned_growth_se_percent: float,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Cache each calculation parameter combination on top of cached loading."""
 
     config = EngineConfig(
         lead_time_days={"IEK": lead_time_iek, "SE": lead_time_se},
         coverage_days=coverage_days,
+        planned_growth={
+            "IEK": planned_growth_iek_percent / 100.0,
+            "SE": planned_growth_se_percent / 100.0,
+        },
     )
     return build_recommendations(load_data(data_dir), config)
 
 
 def _filter_rows(
-    frame: pd.DataFrame, supplier_choice: str, sku_query: str
+    frame: pd.DataFrame,
+    supplier_choice: str,
+    category_choice: str,
+    sku_query: str,
 ) -> pd.DataFrame:
     result = frame
     if supplier_choice != "Оба":
         result = result.loc[result["supplier"].eq(supplier_choice)]
+    if category_choice != "Все":
+        result = result.loc[result["category"].eq(category_choice)]
     query = sku_query.strip()
     if query:
         searchable = result[["sku_code", "article", "name"]].fillna("").astype(str)
@@ -77,12 +93,13 @@ def _filter_rows(
 
 def _sort_orders(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.assign(
-        _urgency_rank=frame["urgency"].map(URGENCY_ORDER).fillna(len(URGENCY_ORDER))
+        _stock_unknown_rank=frame["stock_unknown"].fillna(False).astype(int),
+        _urgency_rank=frame["urgency"].map(URGENCY_ORDER).fillna(len(URGENCY_ORDER)),
     )
     return result.sort_values(
-        ["_urgency_rank", "supplier", "recommended_qty"],
-        ascending=[True, True, False],
-    ).drop(columns="_urgency_rank")
+        ["_stock_unknown_rank", "_urgency_rank", "supplier", "recommended_qty"],
+        ascending=[True, True, True, False],
+    ).drop(columns=["_stock_unknown_rank", "_urgency_rank"])
 
 
 def _show_grouped(frame: pd.DataFrame, columns: dict[str, str]) -> None:
@@ -91,8 +108,29 @@ def _show_grouped(frame: pd.DataFrame, columns: dict[str, str]) -> None:
         return
     for supplier, supplier_rows in frame.groupby("supplier", sort=False):
         st.subheader(str(supplier))
+        display = supplier_rows[list(columns)].rename(columns=columns)
+        unknown_indices = set(
+            supplier_rows.index[
+                supplier_rows.get("stock_unknown", pd.Series(False, index=supplier_rows.index))
+                .fillna(False)
+                .astype(bool)
+            ]
+        )
+        if unknown_indices:
+            st.caption(
+                "Жёлтым выделены строки с неизвестным текущим остатком — "
+                "их нужно сверить с 1С."
+            )
+            display = display.style.apply(
+                lambda row: (
+                    ["background-color: #fff3cd"] * len(row)
+                    if row.name in unknown_indices
+                    else [""] * len(row)
+                ),
+                axis=1,
+            )
         st.dataframe(
-            supplier_rows[list(columns)].rename(columns=columns),
+            display,
             width="stretch",
             hide_index=True,
         )
@@ -115,6 +153,11 @@ def main() -> None:
     with st.sidebar:
         st.header("Параметры расчёта")
         supplier_choice = st.selectbox("Поставщик", SUPPLIER_OPTIONS)
+        categories = [
+            "Все",
+            *sorted(data["sku_ref"]["category"].dropna().astype(str).unique()),
+        ]
+        category_choice = st.selectbox("Категория", categories)
         sku_query = st.text_input("Фильтр по коду, артикулу или наименованию")
         lead_time_iek = int(
             st.number_input(
@@ -134,6 +177,24 @@ def main() -> None:
             )
         )
         st.caption("SE: 35 дней — допущение, дат поставки в данных нет.")
+        planned_growth_iek = float(
+            st.number_input(
+                "Плановый прирост IEK, %",
+                min_value=-100.0,
+                max_value=500.0,
+                value=0.0,
+                step=1.0,
+            )
+        )
+        planned_growth_se = float(
+            st.number_input(
+                "Плановый прирост SE, %",
+                min_value=-100.0,
+                max_value=500.0,
+                value=0.0,
+                step=1.0,
+            )
+        )
         coverage_days = int(
             st.number_input(
                 "Период покрытия, дней",
@@ -148,12 +209,19 @@ def main() -> None:
 
     if run_calculation:
         st.session_state["recommendation_result"] = calculate(
-            str(DATA_DIR), lead_time_iek, lead_time_se, coverage_days
+            str(DATA_DIR),
+            lead_time_iek,
+            lead_time_se,
+            coverage_days,
+            planned_growth_iek,
+            planned_growth_se,
         )
         st.session_state["calculation_parameters"] = (
             lead_time_iek,
             lead_time_se,
             coverage_days,
+            planned_growth_iek,
+            planned_growth_se,
         )
 
     if "recommendation_result" not in st.session_state:
@@ -161,13 +229,23 @@ def main() -> None:
         return
 
     previous_parameters = st.session_state.get("calculation_parameters")
-    current_parameters = (lead_time_iek, lead_time_se, coverage_days)
+    current_parameters = (
+        lead_time_iek,
+        lead_time_se,
+        coverage_days,
+        planned_growth_iek,
+        planned_growth_se,
+    )
     if previous_parameters != current_parameters:
         st.warning("Параметры изменены. Нажмите «Рассчитать», чтобы обновить результат.")
 
     orders, review_needed = st.session_state["recommendation_result"]
-    visible_orders = _sort_orders(_filter_rows(orders, supplier_choice, sku_query))
-    visible_review = _filter_rows(review_needed, supplier_choice, sku_query)
+    visible_orders = _sort_orders(
+        _filter_rows(orders, supplier_choice, category_choice, sku_query)
+    )
+    visible_review = _filter_rows(
+        review_needed, supplier_choice, category_choice, sku_query
+    )
 
     recommendations_tab, review_tab = st.tabs(
         [f"Рекомендации ({len(visible_orders)})", f"На проверку ({len(visible_review)})"]
