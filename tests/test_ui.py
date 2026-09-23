@@ -7,9 +7,11 @@ from app.ui.streamlit_app import (
     FORECAST_OPTIONS,
     _category_label,
     _display_importance,
+    _draft_changes,
     _export_suppliers,
     _filter_rows,
     _needs_calculation,
+    _restore_draft,
     _sort_orders,
     _summary_metrics,
 )
@@ -155,3 +157,31 @@ _approval_controls("IEK", False)
     assert app.button[0].disabled
     assert app.text_input[0].disabled
     assert "утверждение и история отключены" in app.info[0].value
+
+
+def test_editor_draft_restores_changed_quantities() -> None:
+    recommendations = pd.DataFrame(
+        [
+            {
+                "sku_code": "SKU-1",
+                "supplier": "IEK",
+                "recommended_qty": 12,
+                "stock_unknown": False,
+            }
+        ]
+    )
+    drafts = {
+        "SKU-1": {
+            "approved_qty": 18,
+            "comment": "Увеличить запас",
+            "stock_checked": True,
+        }
+    }
+
+    restored = _restore_draft(recommendations, drafts)
+    changes = _draft_changes(
+        _restore_draft(recommendations, {}), restored
+    )
+
+    assert restored.loc[0, "approved_qty"] == 18
+    assert changes == drafts

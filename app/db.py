@@ -107,7 +107,11 @@ def _line_records(lines: pd.DataFrame) -> list[tuple[object, ...]]:
                 None if pd.isna(row.urgency) else str(row.urgency),
                 bool(row.stock_unknown),
                 str(row.explanation),
-                None if not str(row.comment).strip() else str(row.comment),
+                (
+                    None
+                    if pd.isna(row.comment) or not str(row.comment).strip()
+                    else str(row.comment)
+                ),
             )
         )
     return records

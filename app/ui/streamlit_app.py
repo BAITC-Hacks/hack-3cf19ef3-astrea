@@ -35,6 +35,7 @@ from app.loaders import load_all  # noqa: E402
 from app.orders import (  # noqa: E402
     apply_corrections,
     approvable_lines,
+    default_edits,
     order_totals,
 )
 
@@ -390,6 +391,42 @@ def _editor_view(lines: pd.DataFrame) -> pd.DataFrame:
     return view
 
 
+def _restore_draft(
+    recommendations: pd.DataFrame, drafts: dict[str, dict[str, object]]
+) -> pd.DataFrame:
+    edits = default_edits(recommendations)
+    for index, row in edits.iterrows():
+        saved = drafts.get(str(row["sku_code"]))
+        if saved:
+            for column in EDITABLE_COLUMNS:
+                edits.at[index, column] = saved[column]
+    return edits
+
+
+def _draft_changes(
+    defaults: pd.DataFrame, edited: pd.DataFrame
+) -> dict[str, dict[str, object]]:
+    baseline = defaults.set_index(["sku_code", "supplier"])
+    changes: dict[str, dict[str, object]] = {}
+    for row in edited.itertuples(index=False):
+        key = (row.sku_code, row.supplier)
+        original = baseline.loc[key]
+        approved_qty = row.approved_qty
+        comment = "" if pd.isna(row.comment) else str(row.comment)
+        stock_checked = bool(row.stock_checked)
+        if (
+            approved_qty != original["approved_qty"]
+            or comment != str(original["comment"])
+            or stock_checked != bool(original["stock_checked"])
+        ):
+            changes[str(row.sku_code)] = {
+                "approved_qty": approved_qty,
+                "comment": comment,
+                "stock_checked": stock_checked,
+            }
+    return changes
+
+
 def _show_order_editor(
     supplier: str,
     supplier_rows: pd.DataFrame,
@@ -402,7 +439,12 @@ def _show_order_editor(
     """Render one supplier editor and optionally persist its approved order."""
 
     st.subheader(str(supplier))
-    initial = apply_corrections(supplier_rows)
+    draft_key = f"approval_draft_{supplier}"
+    saved_drafts = st.session_state.get(draft_key, {})
+    defaults = default_edits(supplier_rows)
+    initial = apply_corrections(
+        supplier_rows, _restore_draft(supplier_rows, saved_drafts)
+    )
     view = _editor_view(initial)
     changed_indices = set(initial.index[initial["changed"]])
     styled = view.style.apply(
@@ -424,6 +466,14 @@ def _show_order_editor(
         width="stretch",
         hide_index=True,
     )
+    visible_changes = _draft_changes(defaults, edited)
+    updated_drafts = dict(saved_drafts)
+    for sku_code in supplier_rows["sku_code"].astype(str):
+        updated_drafts.pop(sku_code, None)
+    updated_drafts.update(visible_changes)
+    if updated_drafts != saved_drafts:
+        st.session_state[draft_key] = updated_drafts
+        st.rerun()
     try:
         corrected = apply_corrections(supplier_rows, edited)
     except ValueError as error:
