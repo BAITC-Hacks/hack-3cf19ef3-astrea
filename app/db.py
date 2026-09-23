@@ -19,6 +19,18 @@ ORDER_COLUMNS = [
     "params",
     "line_count",
     "total_qty",
+    "dataset_ids",
+]
+DATASET_COLUMNS = [
+    "id",
+    "supplier",
+    "uploaded_by",
+    "uploaded_by_name",
+    "uploaded_at",
+    "data_as_of",
+    "storage_dir",
+    "files",
+    "is_current",
 ]
 LINE_COLUMNS = [
     "order_id",
@@ -127,6 +139,7 @@ def save_order(
     lines: pd.DataFrame,
     connection_url: Optional[str] = None,
     approved_by_user_id: Optional[int] = None,
+    dataset_ids: Optional[Mapping[str, object]] = None,
 ) -> int:
     """Save an order header and all lines atomically, returning its ID."""
 
@@ -146,8 +159,9 @@ def save_order(
                 """
                 INSERT INTO purchase_orders (
                     supplier, approved_by, data_as_of, forecast_method,
-                    params, line_count, total_qty, approved_by_user_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    params, line_count, total_qty, approved_by_user_id,
+                    dataset_ids
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -159,6 +173,7 @@ def save_order(
                     len(records),
                     sum(int(record[7]) for record in records),
                     approved_by_user_id,
+                    Jsonb(dict(dataset_ids or {})),
                 ),
             )
             order_id = int(cursor.fetchone()[0])
@@ -185,13 +200,122 @@ def list_orders(connection_url: Optional[str] = None) -> pd.DataFrame:
     with psycopg.connect(_resolve_url(connection_url), row_factory=dict_row) as connection:
         rows = connection.execute(
             """
-            SELECT id, supplier, approved_by, approved_by_user_id, approved_at, data_as_of,
-                   forecast_method, params, line_count, total_qty
+            SELECT id, supplier, approved_by, approved_by_user_id, approved_at,
+                   data_as_of, forecast_method, params, line_count, total_qty,
+                   dataset_ids
             FROM purchase_orders
             ORDER BY approved_at DESC, id DESC
             """
         ).fetchall()
     return pd.DataFrame(rows, columns=ORDER_COLUMNS)
+
+
+def allocate_dataset_id(connection_url: Optional[str] = None) -> int:
+    """Reserve an ID used as the permanent upload directory name."""
+
+    psycopg, _, _ = _driver()
+    with psycopg.connect(_resolve_url(connection_url)) as connection:
+        row = connection.execute(
+            "SELECT nextval(pg_get_serial_sequence('datasets', 'id'))"
+        ).fetchone()
+    return int(row[0])
+
+
+def save_dataset(
+    dataset_id: int,
+    supplier: str,
+    uploaded_by: int,
+    data_as_of: object,
+    storage_dir: str,
+    files: Mapping[str, object],
+    connection_url: Optional[str] = None,
+) -> int:
+    """Insert and activate a validated supplier dataset atomically."""
+
+    if supplier not in {"IEK", "SE"}:
+        raise ValueError(f"Unknown supplier: {supplier}")
+    psycopg, _, Jsonb = _driver()
+    with psycopg.connect(_resolve_url(connection_url)) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE datasets SET is_current = false WHERE supplier = %s",
+                (supplier,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO datasets (
+                    id, supplier, uploaded_by, data_as_of, storage_dir, files,
+                    is_current
+                ) VALUES (%s, %s, %s, %s, %s, %s, true)
+                """,
+                (
+                    int(dataset_id),
+                    supplier,
+                    int(uploaded_by),
+                    pd.Timestamp(data_as_of).date(),
+                    storage_dir,
+                    Jsonb(dict(files)),
+                ),
+            )
+    return int(dataset_id)
+
+
+def list_datasets(connection_url: Optional[str] = None) -> pd.DataFrame:
+    """Return all uploaded datasets with uploader names, newest first."""
+
+    psycopg, dict_row, _ = _driver()
+    with psycopg.connect(_resolve_url(connection_url), row_factory=dict_row) as connection:
+        rows = connection.execute(
+            """
+            SELECT d.id, d.supplier, d.uploaded_by, u.full_name AS uploaded_by_name,
+                   d.uploaded_at, d.data_as_of, d.storage_dir, d.files, d.is_current
+            FROM datasets AS d
+            LEFT JOIN users AS u ON u.id = d.uploaded_by
+            ORDER BY d.uploaded_at DESC, d.id DESC
+            """
+        ).fetchall()
+    return pd.DataFrame(rows, columns=DATASET_COLUMNS)
+
+
+def current_datasets(connection_url: Optional[str] = None) -> pd.DataFrame:
+    """Return at most one active upload for each supplier."""
+
+    datasets = list_datasets(connection_url)
+    if datasets.empty:
+        return datasets
+    return datasets.loc[datasets["is_current"].astype(bool)].reset_index(drop=True)
+
+
+def set_current_dataset(
+    supplier: str,
+    dataset_id: Optional[int],
+    connection_url: Optional[str] = None,
+) -> None:
+    """Activate a previous upload, or use demo data when ID is None."""
+
+    if supplier not in {"IEK", "SE"}:
+        raise ValueError(f"Unknown supplier: {supplier}")
+    psycopg, _, _ = _driver()
+    with psycopg.connect(_resolve_url(connection_url)) as connection:
+        with connection.cursor() as cursor:
+            if dataset_id is not None:
+                row = cursor.execute(
+                    "SELECT supplier FROM datasets WHERE id = %s",
+                    (int(dataset_id),),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Набор №{dataset_id} не найден")
+                if row[0] != supplier:
+                    raise ValueError("Набор относится к другому поставщику")
+            cursor.execute(
+                "UPDATE datasets SET is_current = false WHERE supplier = %s",
+                (supplier,),
+            )
+            if dataset_id is not None:
+                cursor.execute(
+                    "UPDATE datasets SET is_current = true WHERE id = %s",
+                    (int(dataset_id),),
+                )
 
 
 def get_order_lines(
@@ -218,9 +342,14 @@ def get_order_lines(
 
 
 __all__ = [
+    "allocate_dataset_id",
+    "current_datasets",
     "database_url",
     "ensure_schema",
     "get_order_lines",
     "list_orders",
+    "list_datasets",
+    "save_dataset",
     "save_order",
+    "set_current_dataset",
 ]

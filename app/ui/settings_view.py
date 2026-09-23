@@ -1,7 +1,6 @@
 """Data loading, calculation cache and compact application controls."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Tuple
 
 import pandas as pd
@@ -10,7 +9,7 @@ import streamlit as st
 from app.config import COVERAGE_DAYS, LEAD_TIME_DAYS, EngineConfig
 from app.engine.ml import build_training_frame, feature_importance, train_model
 from app.engine.pipeline import build_recommendations, prepare_forecasts
-from app.loaders import load_all
+from app.datasets import DatasetContext, load_dataset_context
 
 
 SUPPLIER_OPTIONS = ("Оба", "IEK", "SE")
@@ -84,13 +83,21 @@ class AppControls:
 
 
 @st.cache_data(show_spinner="Загружаем данные из 1С")
-def load_data(data_dir: str) -> Dict[str, pd.DataFrame]:
-    return load_all(Path(data_dir))
+def load_data(
+    path_items: tuple[tuple[str, str, str], ...],
+    dataset_key: tuple[object, object],
+) -> Dict[str, pd.DataFrame]:
+    del dataset_key
+    context = DatasetContext({}, path_items, {})
+    return load_dataset_context(context)
 
 
 @st.cache_resource(show_spinner="Обучаем ML-модель")
-def train_ml_resource(data_dir: str) -> Tuple[object, pd.DataFrame]:
-    data = load_data(data_dir)
+def train_ml_resource(
+    path_items: tuple[tuple[str, str, str], ...],
+    dataset_key: tuple[object, object],
+) -> Tuple[object, pd.DataFrame]:
+    data = load_data(path_items, dataset_key)
     as_of = pd.Timestamp(data["sales_tx"]["date"].max())
     last_full_month = as_of.to_period("M") - 1
     _, segments, _, stockouts = prepare_forecasts(data, last_full_month)
@@ -104,7 +111,8 @@ def train_ml_resource(data_dir: str) -> Tuple[object, pd.DataFrame]:
 
 @st.cache_data(show_spinner="Считаем рекомендации")
 def calculate(
-    data_dir: str,
+    path_items: tuple[tuple[str, str, str], ...],
+    dataset_key: tuple[object, object],
     lead_time_iek: int,
     lead_time_se: int,
     coverage_days: int,
@@ -120,12 +128,12 @@ def calculate(
             "SE": planned_growth_se_percent / 100.0,
         },
     }
-    data = load_data(data_dir)
+    data = load_data(path_items, dataset_key)
     if forecast_choice == "formula":
         return build_recommendations(
             data, EngineConfig(**config_values, forecast_method="formula")
         )
-    model, _ = train_ml_resource(data_dir)
+    model, _ = train_ml_resource(path_items, dataset_key)
     return build_recommendations(
         data,
         EngineConfig(**config_values, forecast_method="ml"),
@@ -189,7 +197,9 @@ def reset_filters() -> None:
 
 
 def render_controls(
-    data: Dict[str, pd.DataFrame], data_dir: str
+    data: Dict[str, pd.DataFrame],
+    path_items: tuple[tuple[str, str, str], ...],
+    dataset_key: tuple[object, object],
 ) -> AppControls:
     filter_columns = st.columns([1.0, 1.35, 3.2])
     with filter_columns[0]:
@@ -283,7 +293,7 @@ def render_controls(
             st.warning(
                 "ML занижает общий спрос примерно на 23% для IEK и 26% для SE."
             )
-            _, importance = train_ml_resource(data_dir)
+            _, importance = train_ml_resource(path_items, dataset_key)
             st.dataframe(
                 _display_importance(importance),
                 column_config={

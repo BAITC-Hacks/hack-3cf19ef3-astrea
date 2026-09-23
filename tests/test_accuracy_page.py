@@ -38,9 +38,10 @@ def test_accuracy_page_shows_three_methods_for_each_supplier() -> None:
     app = AppTest.from_string(
         """
 import pandas as pd
+import streamlit as st
 import app.ui.pages.accuracy_page as page
 
-page.calculate_accuracy = lambda data_dir, dataset_key: pd.DataFrame([
+page.calculate_accuracy = lambda path_items, dataset_key: pd.DataFrame([
     {
         "supplier": supplier, "sku_count": 10,
         "our_wape": 0.30, "our_mdape": 0.20, "our_bias": 0.05,
@@ -51,6 +52,10 @@ page.calculate_accuracy = lambda data_dir, dataset_key: pd.DataFrame([
     }
     for supplier in ("IEK", "SE")
 ])
+class Context:
+    path_items = ()
+    cache_key = ("demo", "demo")
+st.session_state["dataset_context"] = Context()
 page.render()
 """
     ).run(timeout=10)

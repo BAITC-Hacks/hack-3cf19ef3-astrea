@@ -26,7 +26,7 @@ def _find_one(directory: Path, fragments: Iterable[str]) -> Path:
     return candidates[0]
 
 
-def _supplier_paths(data_dir: Path) -> Dict[str, Dict[str, Path]]:
+def supplier_paths(data_dir: Path) -> Dict[str, Dict[str, Path]]:
     iek_dir = data_dir / "IEK"
     se_dir = data_dir / "Systeme electric"
     return {
@@ -125,11 +125,10 @@ def _build_current_stock(
     return final
 
 
-def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
-    """Load IEK and Systeme Electric workbooks into canonical DataFrames."""
-
-    data_dir = Path(data_dir)
-    paths = _supplier_paths(data_dir)
+def load_from_paths(
+    paths: Dict[str, Dict[str, Path]],
+) -> Dict[str, pd.DataFrame]:
+    """Load both suppliers from an explicit, validated workbook map."""
 
     tables: Dict[str, pd.DataFrame] = {}
     for table_name, function_name in (
@@ -166,4 +165,10 @@ def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
     return tables
 
 
-__all__ = ["load_all"]
+def load_all(data_dir: Path) -> Dict[str, pd.DataFrame]:
+    """Load IEK and Systeme Electric workbooks into canonical DataFrames."""
+
+    return load_from_paths(supplier_paths(Path(data_dir)))
+
+
+__all__ = ["load_all", "load_from_paths", "supplier_paths"]

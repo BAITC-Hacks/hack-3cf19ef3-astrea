@@ -1,16 +1,12 @@
 """Historical forecast accuracy page."""
 
-from pathlib import Path
-
 import pandas as pd
 import streamlit as st
 
+from app.datasets import DatasetContext, load_dataset_context
 from app.engine.backtest import run_backtest
-from app.loaders import load_all
 
 
-ROOT = Path(__file__).resolve().parents[3]
-DATA_DIR = ROOT / "data" / "raw"
 METHODS = (
     ("Формула", "our"),
     ("Методика партнёра", "partner"),
@@ -44,12 +40,13 @@ METRIC_COLUMNS = {
 
 @st.cache_data(show_spinner="Сравниваем методы на истории")
 def calculate_accuracy(
-    data_dir: str, dataset_key: tuple[object, object]
+    path_items: tuple[tuple[str, str, str], ...],
+    dataset_key: tuple[object, object],
 ) -> pd.DataFrame:
     """Run and cache the comparison for the selected pair of datasets."""
 
     del dataset_key
-    return run_backtest(load_all(Path(data_dir)))
+    return run_backtest(load_dataset_context(DatasetContext({}, path_items, {})))
 
 
 def _accuracy_table(row: pd.Series) -> pd.DataFrame:
@@ -75,8 +72,8 @@ def _highlight_best(row: pd.Series) -> list[str]:
 
 def render() -> None:
     st.title("Точность")
-    dataset_key = tuple(st.session_state.get("dataset_ids", ("demo", "demo")))
-    results = calculate_accuracy(str(DATA_DIR), dataset_key)
+    context = st.session_state["dataset_context"]
+    results = calculate_accuracy(context.path_items, context.cache_key)
 
     columns = st.columns(2)
     for column, supplier in zip(columns, ("IEK", "SE")):

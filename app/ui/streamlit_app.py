@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.db import database_url  # noqa: E402
+from app.datasets import resolve_dataset_context  # noqa: E402
 from app.ui.auth_view import render_auth_screen  # noqa: E402
 from app.ui.order_view import (  # noqa: E402
     ORDER_COLUMNS,
@@ -40,6 +41,7 @@ from app.ui.theme import apply_theme  # noqa: E402
 
 
 DATA_DIR = ROOT / "data" / "raw"
+UPLOAD_DIR = Path("/app/uploads")
 NAVIGATION_TITLES = ("Заказ", "Данные", "История заказов", "Точность")
 
 
@@ -94,7 +96,7 @@ def _render_sidebar_profile(current_user: dict[str, object]) -> None:
 
 
 def _render_order_page() -> None:
-    order_page.render(DATA_DIR, load_data, calculate)
+    order_page.render(load_data, calculate)
 
 
 def _navigation() -> object:
@@ -145,6 +147,13 @@ def main() -> None:
         return
 
     st.session_state["connection_url"] = connection_url
+    try:
+        dataset_context = resolve_dataset_context(connection_url, DATA_DIR)
+    except Exception as error:
+        st.error(f"Не удалось определить текущие данные: {error}")
+        return
+    st.session_state["dataset_context"] = dataset_context
+    st.session_state["dataset_ids"] = dataset_context.cache_key
     _render_sidebar_brand()
     page = _navigation()
     _render_sidebar_profile(current_user)

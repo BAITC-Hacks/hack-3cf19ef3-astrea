@@ -21,12 +21,16 @@ services:
     environment:
       DATABASE_URL: postgresql://astrea:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/astrea
       INVITE_CODE: ${INVITE_CODE:-}
+      UPLOAD_DIR: /app/uploads
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "127.0.0.1:8501:8501"
+    volumes:
+      - uploads:/app/uploads
     restart: unless-stopped
 
 volumes:
   pg_data:
+  uploads:

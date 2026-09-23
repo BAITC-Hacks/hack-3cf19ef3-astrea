@@ -299,7 +299,13 @@ import app.ui.streamlit_app as application
 
 application.database_url = lambda: "postgresql://configured"
 application.initialize_database = lambda connection_url: (True, "")
-application.load_data = lambda data_dir: {
+class DatasetContext:
+    cache_key = ("demo", "demo")
+    path_items = ()
+    dataset_ids = {"IEK": None, "SE": None}
+    current_rows = {}
+application.resolve_dataset_context = lambda connection_url, data_dir: DatasetContext()
+application.load_data = lambda *args: {
     "sales_tx": pd.DataFrame({"date": [pd.Timestamp("2026-09-22")]}),
     "sku_ref": pd.DataFrame({
         "supplier": ["IEK"], "category": ["без категории"]

@@ -16,7 +16,9 @@ COPY tests ./tests
 COPY .streamlit ./.streamlit
 COPY pytest.ini ./pytest.ini
 
-RUN useradd -m app && chown -R app:app /app
+RUN useradd -m app \
+    && mkdir -p /app/uploads \
+    && chown -R app:app /app
 USER app
 
 EXPOSE 8501

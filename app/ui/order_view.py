@@ -277,6 +277,7 @@ def render_supplier_order(
     data_as_of: object,
     forecast_method: str,
     params: dict[str, object],
+    dataset_ids: dict[str, object],
 ) -> pd.DataFrame:
     st.subheader(supplier)
     drafts = st.session_state.get(f"approval_draft_{supplier}", {})
@@ -331,6 +332,7 @@ def render_supplier_order(
                     approved_lines,
                     connection_url,
                     approved_by_user_id=int(current_user["id"]),
+                    dataset_ids=dataset_ids,
                 )
             except Exception as error:
                 st.error(f"Не удалось сохранить заказ: {error}")
@@ -347,6 +349,7 @@ def render_order_tab(
     data_as_of: object,
     forecast_method: str,
     params: dict[str, object],
+    dataset_ids: dict[str, object],
 ) -> list[pd.DataFrame]:
     if orders.empty:
         _empty_state("reset_order_filters")
@@ -363,6 +366,7 @@ def render_order_tab(
                 data_as_of,
                 forecast_method,
                 params,
+                dataset_ids,
             )
         )
     return corrected
