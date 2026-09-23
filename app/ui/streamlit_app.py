@@ -27,7 +27,7 @@ from app.ui.order_view import (  # noqa: E402
     _sort_orders,
     _summary_metrics,
 )
-from app.ui.pages import accuracy_page, data_page, history_page, order_page  # noqa: E402
+from app.ui.screens import accuracy_page, data_page, history_page, order_page  # noqa: E402
 from app.ui.settings_view import (  # noqa: E402
     FORECAST_OPTIONS,
     _category_label,

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from app.ui.pages.data_page import _source_label, _supplier_stats
+from app.ui.screens.data_page import _source_label, _supplier_stats
 
 
 def test_dataset_card_stats_are_scoped_to_supplier() -> None:

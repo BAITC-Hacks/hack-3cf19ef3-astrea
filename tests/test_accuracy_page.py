@@ -1,7 +1,7 @@
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
-from app.ui.pages.accuracy_page import _accuracy_table
+from app.ui.screens.accuracy_page import _accuracy_table
 
 
 def _result_row(supplier: str) -> dict[str, object]:
@@ -39,7 +39,7 @@ def test_accuracy_page_shows_three_methods_for_each_supplier() -> None:
         """
 import pandas as pd
 import streamlit as st
-import app.ui.pages.accuracy_page as page
+import app.ui.screens.accuracy_page as page
 
 page.calculate_accuracy = lambda path_items, dataset_key, on_progress=None: pd.DataFrame([
     {
