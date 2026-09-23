@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: autozakaz
+      POSTGRES_USER: autozakaz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте в .env}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autozakaz -d autozakaz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://autozakaz:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/autozakaz
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8501:8501"
+    restart: unless-stopped
+
+volumes:
+  pg_data:
