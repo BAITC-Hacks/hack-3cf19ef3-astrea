@@ -49,6 +49,10 @@ EDITABLE_COLUMNS = {"approved_qty", "comment", "stock_checked"}
 DATABASE_DISABLED_MESSAGE = "Утверждение и история временно недоступны"
 
 
+def _export_filename(data_as_of: object) -> str:
+    return f"astrea_{pd.Timestamp(data_as_of):%Y-%m-%d}.xlsx"
+
+
 def _empty_state(key: str) -> None:
     empty, action = st.columns([4, 1])
     empty.info("Нет позиций по фильтру")
@@ -311,7 +315,7 @@ def render_supplier_order(
         st.download_button(
             "Скачать xlsx",
             data=export_xlsx(corrected, suppliers=(supplier,)),
-            file_name=f"astrea_{data_as_of:%Y-%m-%d}_{supplier}.xlsx",
+            file_name=_export_filename(data_as_of),
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_order_{supplier}",
             width="stretch",
@@ -398,6 +402,7 @@ __all__ = [
     "_approval_controls",
     "_details_points",
     "_draft_changes",
+    "_export_filename",
     "_export_suppliers",
     "_filter_rows",
     "_restore_draft",

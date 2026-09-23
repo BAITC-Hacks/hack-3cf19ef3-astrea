@@ -10,6 +10,7 @@ from app.ui.streamlit_app import (
     _details_points,
     _display_importance,
     _draft_changes,
+    _export_filename,
     _export_suppliers,
     _filter_rows,
     _initials,
@@ -155,6 +156,10 @@ def test_export_suppliers_follow_supplier_filter() -> None:
     assert _export_suppliers("Оба") == ("IEK", "SE")
     assert _export_suppliers("IEK") == ("IEK",)
     assert _export_suppliers("SE") == ("SE",)
+
+
+def test_export_filename_uses_astrea_and_snapshot_date() -> None:
+    assert _export_filename("2026-09-22") == "astrea_2026-09-22.xlsx"
 
 
 def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:
