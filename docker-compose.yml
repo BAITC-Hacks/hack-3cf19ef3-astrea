@@ -20,7 +20,6 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://astrea:${POSTGRES_PASSWORD:?задайте в .env}@db:5432/astrea
-      INVITE_CODE: ${INVITE_CODE:-}
       UPLOAD_DIR: /app/uploads
     depends_on:
       db:

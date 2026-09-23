@@ -96,16 +96,14 @@ def test_line_failure_rolls_back_order_header() -> None:
     assert not orders["approved_by"].eq(approved_by).any()
 
 
-def test_register_authenticate_and_reject_duplicate_email(monkeypatch) -> None:
+def test_register_authenticate_and_reject_duplicate_email() -> None:
     ensure_schema(DATABASE_URL)
-    monkeypatch.setenv("INVITE_CODE", "pytest-invite")
     email = f"pytest-{uuid4()}@example.com"
     try:
         user = register(
             email.upper(),
             "Тестовый пользователь",
             "correct-password",
-            "pytest-invite",
             DATABASE_URL,
         )
 
@@ -117,7 +115,6 @@ def test_register_authenticate_and_reject_duplicate_email(monkeypatch) -> None:
                 email,
                 "Другой пользователь",
                 "correct-password",
-                "pytest-invite",
                 DATABASE_URL,
             )
     finally:
@@ -125,15 +122,13 @@ def test_register_authenticate_and_reject_duplicate_email(monkeypatch) -> None:
             connection.execute("DELETE FROM users WHERE email = %s", (email,))
 
 
-def test_order_records_current_user_id(monkeypatch) -> None:
+def test_order_records_current_user_id() -> None:
     ensure_schema(DATABASE_URL)
-    monkeypatch.setenv("INVITE_CODE", "pytest-invite")
     email = f"pytest-order-{uuid4()}@example.com"
     user = register(
         email,
         "Утверждающий",
         "correct-password",
-        "pytest-invite",
         DATABASE_URL,
     )
     order_id = save_order(
@@ -156,15 +151,13 @@ def test_order_records_current_user_id(monkeypatch) -> None:
             connection.execute("DELETE FROM users WHERE id = %s", (user["id"],))
 
 
-def test_dataset_activation_and_rollback(monkeypatch) -> None:
+def test_dataset_activation_and_rollback() -> None:
     ensure_schema(DATABASE_URL)
-    monkeypatch.setenv("INVITE_CODE", "pytest-invite")
     email = f"pytest-dataset-{uuid4()}@example.com"
     user = register(
         email,
         "Загрузивший",
         "correct-password",
-        "pytest-invite",
         DATABASE_URL,
     )
     first_id = allocate_dataset_id(DATABASE_URL)

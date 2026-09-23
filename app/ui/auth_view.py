@@ -43,7 +43,6 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
                 full_name = st.text_input("Имя")
                 email = st.text_input("Email")
                 password = st.text_input("Пароль", type="password")
-                invite_code = st.text_input("Код приглашения", type="password")
                 submitted = st.form_submit_button(
                     "Зарегистрироваться", type="primary", width="stretch"
                 )
@@ -53,8 +52,7 @@ def render_auth_screen(connection_url: str) -> Optional[dict[str, object]]:
                         email,
                         full_name,
                         password,
-                        invite_code,
-                        connection_url,
+                        connection_url=connection_url,
                     )
                 except RegistrationError as error:
                     st.error(str(error))

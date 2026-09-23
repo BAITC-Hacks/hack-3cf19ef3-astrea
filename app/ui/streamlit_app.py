@@ -96,36 +96,36 @@ def _render_sidebar_profile(current_user: dict[str, object]) -> None:
                 st.rerun()
 
 
-def _render_order_page() -> None:
+def _render_order() -> None:
     order_page.render(load_data, calculate)
 
 
 def _navigation() -> object:
     pages = [
         st.Page(
-            _render_order_page,
+            _render_order,
             title="Заказ",
             icon=":material/shopping_cart:",
-            url_path="order",
+            url_path="заказ",
             default=True,
         ),
         st.Page(
             data_page.render,
             title="Данные",
             icon=":material/database:",
-            url_path="data",
+            url_path="данные",
         ),
         st.Page(
             history_page.render,
             title="История заказов",
             icon=":material/history:",
-            url_path="history",
+            url_path="история-заказов",
         ),
         st.Page(
             accuracy_page.render,
             title="Точность",
             icon=":material/monitoring:",
-            url_path="accuracy",
+            url_path="точность",
         ),
     ]
     return st.navigation(pages, position="sidebar", expanded=True)

@@ -68,6 +68,13 @@ def test_authenticated_navigation_has_four_expected_pages(monkeypatch) -> None:
     assert [page["title"] for page in captured["pages"]] == list(
         NAVIGATION_TITLES
     )
+    assert [page["url_path"] for page in captured["pages"]] == [
+        "заказ",
+        "данные",
+        "история-заказов",
+        "точность",
+    ]
+    assert all("page" not in page["function"].__name__ for page in captured["pages"])
     assert captured["options"] == {"position": "sidebar", "expanded": True}
     assert captured["pages"][0]["default"] is True
 

@@ -1,8 +1,7 @@
-"""Invitation-only user registration and password authentication."""
+"""User registration and password authentication."""
 
 import hashlib
 import hmac
-import os
 import re
 import secrets
 from typing import Optional
@@ -71,13 +70,7 @@ def _validate_registration(
     email: str,
     full_name: str,
     password: str,
-    invite_code: str,
 ) -> tuple[str, str]:
-    expected_code = os.getenv("INVITE_CODE", "")
-    if not expected_code:
-        raise RegistrationError("Регистрация закрыта")
-    if not hmac.compare_digest(invite_code, expected_code):
-        raise RegistrationError("Неверный код приглашения")
     normalized_email = _normalized_email(email)
     normalized_name = full_name.strip()
     if not normalized_name:
@@ -105,13 +98,12 @@ def register(
     email: str,
     full_name: str,
     password: str,
-    invite_code: str,
     connection_url: Optional[str] = None,
 ) -> dict[str, object]:
-    """Create a user after validating the invitation and credentials."""
+    """Create a user after validating their credentials."""
 
     normalized_email, normalized_name = _validate_registration(
-        email, full_name, password, invite_code
+        email, full_name, password
     )
     psycopg, dict_row = _driver()
     try:
