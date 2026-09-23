@@ -13,7 +13,7 @@ ORDER_COLUMNS = {
     "name": "Наименование",
     "unit": "Ед.",
     "category": "Категория",
-    "recommended_qty": "Количество",
+    "export_qty": "Количество",
 }
 EXPLANATION_COLUMNS = {
     "sku_code": "Код 1С",
@@ -28,6 +28,19 @@ EXPLANATION_COLUMNS = {
 }
 STOCK_REVIEW_COLUMNS = {
     **ORDER_COLUMNS,
+    "explanation": "Обоснование",
+}
+APPROVED_EXPLANATION_COLUMNS = {
+    "sku_code": "Код 1С",
+    "article": "Артикул поставщика",
+    "name": "Наименование",
+    "unit": "Ед.",
+    "category": "Категория",
+    "supplier": "Поставщик",
+    "recommended_qty": "Рекомендовано",
+    "approved_qty": "Утверждено",
+    "comment": "Комментарий",
+    "urgency": "Срочность",
     "explanation": "Обоснование",
 }
 
@@ -51,8 +64,23 @@ def export_xlsx(
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        stock_unknown = recommendations["stock_unknown"].fillna(False).astype(bool)
-        importable = recommendations.loc[~stock_unknown]
+        frame = recommendations.copy()
+        has_approved_quantities = "approved_qty" in frame
+        frame["export_qty"] = (
+            frame["approved_qty"]
+            if has_approved_quantities
+            else frame["recommended_qty"]
+        )
+        if "comment" not in frame:
+            frame["comment"] = ""
+        stock_unknown = frame["stock_unknown"].fillna(False).astype(bool)
+        if "stock_checked" in frame:
+            stock_review = stock_unknown & ~frame["stock_checked"].fillna(False).astype(
+                bool
+            )
+        else:
+            stock_review = stock_unknown
+        importable = frame.loc[~stock_review]
         for supplier in supplier_names:
             supplier_rows = importable.loc[
                 importable["supplier"].eq(supplier)
@@ -61,14 +89,17 @@ def export_xlsx(
             order_sheet.to_excel(writer, sheet_name=supplier[:31], index=False)
 
         stock_review_sheet = _select_and_rename(
-            recommendations.loc[stock_unknown], STOCK_REVIEW_COLUMNS
+            frame.loc[stock_review], STOCK_REVIEW_COLUMNS
         )
         stock_review_sheet.to_excel(
             writer, sheet_name="Проверить остаток", index=False
         )
 
         explanation_sheet = _select_and_rename(
-            recommendations, EXPLANATION_COLUMNS
+            frame,
+            APPROVED_EXPLANATION_COLUMNS
+            if has_approved_quantities
+            else EXPLANATION_COLUMNS,
         )
         explanation_sheet.to_excel(writer, sheet_name="Обоснование", index=False)
 

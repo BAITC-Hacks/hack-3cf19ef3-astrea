@@ -102,3 +102,58 @@ def test_export_can_include_only_the_filtered_supplier_sheet() -> None:
         "Обоснование",
     ]
     assert "IEK" not in workbook.sheetnames
+
+
+def test_export_uses_approved_quantities_and_includes_checked_stock() -> None:
+    recommendations = pd.DataFrame(
+        [
+            {
+                "sku_code": "SKU-1",
+                "article": "ART-1",
+                "name": "Изменённый товар",
+                "unit": "шт",
+                "category": "без категории",
+                "supplier": "IEK",
+                "recommended_qty": 12,
+                "approved_qty": 18,
+                "comment": "Увеличить запас",
+                "stock_unknown": False,
+                "stock_checked": True,
+                "urgency": "высокая",
+                "explanation": "Расчётное обоснование",
+            },
+            {
+                "sku_code": "SKU-2",
+                "article": "ART-2",
+                "name": "Остаток проверен",
+                "unit": "шт",
+                "category": "без категории",
+                "supplier": "IEK",
+                "recommended_qty": 10,
+                "approved_qty": 5,
+                "comment": "Сверено с 1С",
+                "stock_unknown": True,
+                "stock_checked": True,
+                "urgency": "проверить остаток",
+                "explanation": "Сверить остаток",
+            },
+        ]
+    )
+
+    workbook = openpyxl.load_workbook(
+        BytesIO(export_xlsx(recommendations, suppliers=("IEK",)))
+    )
+
+    assert workbook["IEK"]["F2"].value == 18
+    assert workbook["IEK"]["F3"].value == 5
+    assert workbook["Проверить остаток"].max_row == 1
+    explanation_headers = [
+        cell.value for cell in workbook["Обоснование"][1]
+    ]
+    assert explanation_headers[-5:] == [
+        "Рекомендовано",
+        "Утверждено",
+        "Комментарий",
+        "Срочность",
+        "Обоснование",
+    ]

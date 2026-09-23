@@ -23,8 +23,20 @@ from app.engine.ml import (  # noqa: E402
     train_model,
 )
 from app.engine.pipeline import build_recommendations, prepare_forecasts  # noqa: E402
+from app.db import (  # noqa: E402
+    database_url,
+    ensure_schema,
+    get_order_lines,
+    list_orders,
+    save_order,
+)
 from app.export import export_xlsx  # noqa: E402
 from app.loaders import load_all  # noqa: E402
+from app.orders import (  # noqa: E402
+    apply_corrections,
+    approvable_lines,
+    order_totals,
+)
 
 
 DATA_DIR = ROOT / "data" / "raw"
@@ -85,6 +97,47 @@ FEATURE_LABELS = {
     "supplier_feature": "Поставщик",
     "category_feature": "Категория",
 }
+DATABASE_DISABLED_MESSAGE = (
+    "PostgreSQL недоступен: утверждение и история отключены. "
+    "Расчёт, корректировка и выгрузка продолжают работать."
+)
+EDITOR_COLUMN_ORDER = [
+    "sku_code",
+    "name",
+    "recommended_qty",
+    "approved_qty",
+    "urgency",
+    "explanation",
+    "comment",
+    "stock_checked",
+    "article",
+    "category_display",
+    "moq",
+]
+EDITABLE_COLUMNS = {"approved_qty", "comment", "stock_checked"}
+EDITOR_COLUMN_CONFIG = {
+    "sku_code": st.column_config.TextColumn("Код 1С", width="small"),
+    "name": st.column_config.TextColumn("Наименование", width="medium"),
+    "recommended_qty": st.column_config.NumberColumn(
+        "Рекомендовано", width="small", format="%d"
+    ),
+    "approved_qty": st.column_config.NumberColumn(
+        "Утверждённое количество", min_value=0, step=1, width="small", format="%d"
+    ),
+    "urgency": st.column_config.TextColumn("Срочность", width="small"),
+    "explanation": st.column_config.TextColumn("Обоснование", width="large"),
+    "comment": st.column_config.TextColumn("Комментарий", width="large"),
+    "stock_checked": st.column_config.CheckboxColumn(
+        "Остаток сверен", help="Обязательно для строк с неизвестным остатком."
+    ),
+    "article": st.column_config.TextColumn("Артикул", width="medium"),
+    "category_display": st.column_config.TextColumn("Категория", width="medium"),
+    "moq": st.column_config.NumberColumn("MOQ", width="small", format="%d"),
+    "supplier": None,
+    "stock_unknown": None,
+    "unit": None,
+    "category": None,
+}
 
 
 @st.cache_data(show_spinner="Загружаем данные из 1С…")
@@ -108,6 +161,19 @@ def train_ml_resource(data_dir: str) -> Tuple[object, pd.DataFrame]:
     model = train_model(training)
     importance = feature_importance(model, training)
     return model, importance
+
+
+@st.cache_resource(show_spinner=False)
+def initialize_database(connection_url: str) -> Tuple[bool, str]:
+    """Apply the schema once while keeping no-database startup non-fatal."""
+
+    if not connection_url:
+        return False, "DATABASE_URL не задан"
+    try:
+        ensure_schema(connection_url)
+    except Exception as error:
+        return False, f"{type(error).__name__}: {error}"
+    return True, ""
 
 
 @st.cache_data(show_spinner="Рассчитываем рекомендации…")
@@ -280,10 +346,266 @@ def _show_grouped(
         )
 
 
+def _approval_controls(
+    supplier: str, database_ready: bool
+) -> tuple[str, bool]:
+    """Render approval controls, disabled when PostgreSQL is unavailable."""
+
+    if not database_ready:
+        st.info(DATABASE_DISABLED_MESSAGE)
+    approved_by = st.text_input(
+        "Кто утверждает",
+        key=f"approved_by_{supplier}",
+        disabled=not database_ready,
+    )
+    pressed = st.button(
+        f"Утвердить заказ {supplier}",
+        key=f"approve_order_{supplier}",
+        type="primary",
+        disabled=not database_ready,
+    )
+    return approved_by, pressed
+
+
+def _editor_view(lines: pd.DataFrame) -> pd.DataFrame:
+    view = lines[
+        [
+            "sku_code",
+            "supplier",
+            "name",
+            "recommended_qty",
+            "approved_qty",
+            "urgency",
+            "explanation",
+            "comment",
+            "stock_checked",
+            "article",
+            "category",
+            "moq",
+            "stock_unknown",
+            "unit",
+        ]
+    ].copy()
+    view["category_display"] = view["category"].map(_category_label)
+    return view
+
+
+def _show_order_editor(
+    supplier: str,
+    supplier_rows: pd.DataFrame,
+    database_ready: bool,
+    connection_url: str,
+    data_as_of: object,
+    forecast_method: str,
+    params: dict[str, object],
+) -> pd.DataFrame:
+    """Render one supplier editor and optionally persist its approved order."""
+
+    st.subheader(str(supplier))
+    initial = apply_corrections(supplier_rows)
+    view = _editor_view(initial)
+    changed_indices = set(initial.index[initial["changed"]])
+    styled = view.style.apply(
+        lambda row: (
+            ["background-color: #fff3cd"] * len(row)
+            if row.name in changed_indices
+            else [""] * len(row)
+        ),
+        axis=1,
+    )
+    edited = st.data_editor(
+        styled,
+        key=f"order_editor_{supplier}",
+        column_order=EDITOR_COLUMN_ORDER,
+        column_config=EDITOR_COLUMN_CONFIG,
+        disabled=[
+            column for column in view.columns if column not in EDITABLE_COLUMNS
+        ],
+        width="stretch",
+        hide_index=True,
+    )
+    try:
+        corrected = apply_corrections(supplier_rows, edited)
+    except ValueError as error:
+        st.error(str(error))
+        corrected = initial
+
+    totals = order_totals(corrected)
+    st.markdown(
+        f"**Итого: рекомендовано {totals['recommended_qty']:,} шт. → "
+        f"к утверждению {totals['approved_qty']:,} шт.; "
+        f"изменено строк: {totals['changed_lines']}.**".replace(",", " ")
+    )
+    if totals["excluded_lines"]:
+        st.caption(
+            f"Не войдут в заказ без сверки остатка: {totals['excluded_lines']} строк."
+        )
+    warning_rows = corrected.loc[
+        corrected["approval_warning"].str.len().gt(0),
+        ["sku_code", "approval_warning"],
+    ]
+    if not warning_rows.empty:
+        st.warning(f"Предупреждений по корректировкам: {len(warning_rows)}")
+        with st.expander("Показать предупреждения"):
+            st.dataframe(
+                warning_rows.rename(
+                    columns={
+                        "sku_code": "Код 1С",
+                        "approval_warning": "Предупреждение",
+                    }
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+
+    approved_by, approve_pressed = _approval_controls(supplier, database_ready)
+    approved_lines = approvable_lines(corrected)
+    if approve_pressed:
+        if not approved_by.strip():
+            st.error("Укажите, кто утверждает заказ.")
+        elif approved_lines.empty:
+            st.error("В заказе нет строк для утверждения.")
+        else:
+            try:
+                order_id = save_order(
+                    supplier,
+                    approved_by,
+                    data_as_of,
+                    forecast_method,
+                    params,
+                    approved_lines,
+                    connection_url,
+                )
+            except Exception as error:
+                st.error(f"Не удалось сохранить заказ: {error}")
+            else:
+                st.session_state[f"saved_order_{supplier}"] = {
+                    "id": order_id,
+                    "lines": approved_lines,
+                }
+                st.success(
+                    f"Заказ №{order_id} сохранён. Поставщику ничего не отправлено."
+                )
+
+    saved_order = st.session_state.get(f"saved_order_{supplier}")
+    if saved_order:
+        st.download_button(
+            f"Скачать утверждённый заказ №{saved_order['id']}",
+            data=export_xlsx(saved_order["lines"], suppliers=(supplier,)),
+            file_name=f"approved_order_{saved_order['id']}_{supplier}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"download_saved_{supplier}",
+        )
+    return corrected
+
+
+def _show_order_history(database_ready: bool, connection_url: str) -> None:
+    """Render stored order headers, lines and repeatable approved export."""
+
+    if not database_ready:
+        st.info(DATABASE_DISABLED_MESSAGE)
+        return
+    try:
+        orders = list_orders(connection_url)
+    except Exception as error:
+        st.error(f"Не удалось загрузить историю заказов: {error}")
+        return
+    if orders.empty:
+        st.info("Утверждённых заказов пока нет.")
+        return
+
+    history = orders.copy()
+    history["approved_at"] = pd.to_datetime(history["approved_at"]).dt.strftime(
+        "%d.%m.%Y %H:%M"
+    )
+    st.dataframe(
+        history[
+            [
+                "id",
+                "supplier",
+                "approved_by",
+                "approved_at",
+                "line_count",
+                "total_qty",
+                "forecast_method",
+            ]
+        ].rename(
+            columns={
+                "id": "№",
+                "supplier": "Поставщик",
+                "approved_by": "Утвердил",
+                "approved_at": "Дата утверждения",
+                "line_count": "Позиций",
+                "total_qty": "Количество",
+                "forecast_method": "Метод прогноза",
+            }
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    labels = {
+        int(row.id): (
+            f"№{row.id} · {row.supplier} · {row.approved_at} · "
+            f"{row.approved_by}"
+        )
+        for row in history.itertuples(index=False)
+    }
+    selected_order = st.selectbox(
+        "Открыть заказ",
+        list(labels),
+        format_func=labels.get,
+    )
+    try:
+        lines = get_order_lines(int(selected_order), connection_url)
+    except Exception as error:
+        st.error(f"Не удалось загрузить строки заказа: {error}")
+        return
+    st.dataframe(
+        lines[
+            [
+                "sku_code",
+                "name",
+                "recommended_qty",
+                "approved_qty",
+                "comment",
+                "urgency",
+                "article",
+                "category",
+            ]
+        ].rename(
+            columns={
+                "sku_code": "Код 1С",
+                "name": "Наименование",
+                "recommended_qty": "Рекомендовано",
+                "approved_qty": "Утверждено",
+                "comment": "Комментарий",
+                "urgency": "Срочность",
+                "article": "Артикул",
+                "category": "Категория",
+            }
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    lines["stock_checked"] = True
+    supplier = str(lines["supplier"].iloc[0])
+    st.download_button(
+        f"Скачать заказ №{selected_order}",
+        data=export_xlsx(lines, suppliers=(supplier,)),
+        file_name=f"approved_order_{selected_order}_{supplier}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="Автозаказ", page_icon="📦", layout="wide")
     st.title("Автозаказ поставщикам")
     st.caption("Расчёт выполняется локально. Заказ поставщику не отправляется.")
+
+    connection_url = database_url() or ""
+    database_ready, database_error = initialize_database(connection_url)
+    if not database_ready:
+        st.caption(f"Режим без базы: {database_error}.")
 
     try:
         data = load_data(str(DATA_DIR))
@@ -387,6 +709,14 @@ def main() -> None:
         planned_growth_se,
         forecast_choice,
     )
+    approval_params = {
+        "lead_time_days": {"IEK": lead_time_iek, "SE": lead_time_se},
+        "coverage_days": coverage_days,
+        "planned_growth_percent": {
+            "IEK": planned_growth_iek,
+            "SE": planned_growth_se,
+        },
+    }
     if _needs_calculation(st.session_state, run_calculation):
         st.session_state["recommendation_result"] = calculate(
             str(DATA_DIR),
@@ -412,16 +742,45 @@ def main() -> None:
     )
 
     _show_summary(visible_orders)
-    recommendations_tab, review_tab = st.tabs(
-        [f"Рекомендации ({len(visible_orders)})", f"На проверку ({len(visible_review)})"]
+    recommendations_tab, review_tab, history_tab = st.tabs(
+        [
+            f"Рекомендации ({len(visible_orders)})",
+            f"На проверку ({len(visible_review)})",
+            "История заказов",
+        ]
     )
     with recommendations_tab:
-        _show_grouped(visible_orders, ORDER_COLUMNS, ORDER_COLUMN_CONFIG)
+        corrected_groups = []
+        if visible_orders.empty:
+            st.info("По выбранным фильтрам строк нет.")
+        else:
+            for supplier, supplier_rows in visible_orders.groupby(
+                "supplier", sort=False
+            ):
+                corrected_groups.append(
+                    _show_order_editor(
+                        str(supplier),
+                        supplier_rows,
+                        database_ready,
+                        connection_url,
+                        as_of,
+                        forecast_choice,
+                        approval_params,
+                    )
+                )
+        corrected_orders = (
+            pd.concat(corrected_groups, ignore_index=True)
+            if corrected_groups
+            else apply_corrections(visible_orders)
+        )
         workbook = export_xlsx(
-            visible_orders, suppliers=_export_suppliers(supplier_choice)
+            corrected_orders, suppliers=_export_suppliers(supplier_choice)
         )
         stock_review_count = int(
-            visible_orders["stock_unknown"].fillna(False).astype(bool).sum()
+            (
+                corrected_orders["stock_unknown"].fillna(False).astype(bool)
+                & ~corrected_orders["stock_checked"].fillna(False).astype(bool)
+            ).sum()
         )
         st.caption(
             f"На отдельный лист «Проверить остаток» ушло позиций: "
@@ -449,6 +808,8 @@ def main() -> None:
                 )
     with review_tab:
         _show_grouped(visible_review, REVIEW_COLUMNS, REVIEW_COLUMN_CONFIG)
+    with history_tab:
+        _show_order_history(database_ready, connection_url)
 
 
 if __name__ == "__main__":

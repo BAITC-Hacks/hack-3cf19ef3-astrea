@@ -1,4 +1,5 @@
 import pandas as pd
+from streamlit.testing.v1 import AppTest
 
 from app.ui.streamlit_app import (
     ORDER_COLUMNS,
@@ -140,3 +141,17 @@ def test_category_filter_changes_rows_and_unknown_stock_sorts_last() -> None:
 
     assert list(filtered["sku_code"]) == ["NORMAL-LOW", "UNKNOWN-HIGH"]
     assert list(sorted_rows["sku_code"]) == ["NORMAL-LOW", "UNKNOWN-HIGH"]
+
+
+def test_approval_is_disabled_without_database() -> None:
+    app = AppTest.from_string(
+        """
+from app.ui.streamlit_app import _approval_controls
+_approval_controls("IEK", False)
+"""
+    ).run(timeout=10)
+
+    assert not app.exception
+    assert app.button[0].disabled
+    assert app.text_input[0].disabled
+    assert "утверждение и история отключены" in app.info[0].value
